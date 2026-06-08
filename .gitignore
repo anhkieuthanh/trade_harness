@@ -1,5 +1,7 @@
 .env
-.venv
-__pycache__
-tests
-var
+.venv/
+__pycache__/
+*.pyc
+var/
+tradeharness/evolution/artifacts/current/*.json
+tradeharness/evolution/artifacts/current/*.json
