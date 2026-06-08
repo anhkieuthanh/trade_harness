@@ -18,11 +18,13 @@ The online runtime trades.
 
 The offline evolution block learns from the runtime's trajectories and turns repeated failure patterns into better protection, guidance, and regulation for the next iteration of the harness.
 
-This first version should include three connected stages:
+This first version should include five connected stages:
 
 1. `Failure Annotation Protocol (FAP)`
 2. `Four-layer failure classification`
-3. `Evolution updater`
+3. `Failure pattern mining`
+4. `Evolution updater`
+5. `Regression-gated promotion`
 
 Together they form one offline evolution workflow:
 
@@ -30,9 +32,12 @@ Together they form one offline evolution workflow:
 Trajectory Logs
   -> FAP Diagnostic Cascade
   -> Four-Layer Classification
+  -> Failure Pattern Mining
   -> Evolution Updater
   -> Regression Check
-  -> Harness Update Artifacts
+  -> Staged Harness Updates
+  -> Promotion Gate
+  -> Harness t+1 Artifacts
 ```
 
 ## Phase Boundary
@@ -44,13 +49,14 @@ This first version will:
 - use an external `OpenAI-compatible` evaluator API with model `gpt-5.4`
 - diagnose failures using a priority-ordered FAP process
 - map failures into the four LIFE-HARNESS layers
-- produce structured harness-update artifacts instead of editing runtime code directly
+- mine recurring failure patterns across annotated trajectories
+- write staged harness updates before promotion
 - include regression-check notes for proposed updates
+- support promotion from `staging` to `current` only after regression checks pass
 
 This first version will not:
 
 - auto-commit code changes into the harness
-- rewrite prompts or Python files automatically
 - process multi-day portfolio analytics
 - optimize model weights
 - add queue-based distributed workers
@@ -69,9 +75,11 @@ The system should keep a clean boundary between online execution and offline evo
 
 - read stored trajectory logs after the session or trading day
 - run failure diagnosis
-- identify the most important failure patterns
-- recommend updates to the correct harness layers
-- perform regression-oriented review notes on those updates
+- identify recurring failure patterns
+- select the earliest and cheapest viable harness layer for each pattern
+- write staged updates for the selected layer
+- perform regression-oriented review notes on those staged updates
+- promote only safe staged updates into active harness artifacts
 
 This separation keeps trading logic stable while letting the improvement loop evolve independently.
 
@@ -84,6 +92,7 @@ tradeharness/evolution/
   __init__.py
   main.py
   schemas.py
+  scheduler.py
   fap/
     __init__.py
     annotator.py
@@ -91,9 +100,14 @@ tradeharness/evolution/
   classification/
     __init__.py
     mapper.py
+  mining/
+    __init__.py
+    patterns.py
   updater/
     __init__.py
     agent.py
+    staging.py
+    promotion.py
     regression.py
   storage/
     __init__.py
@@ -116,8 +130,12 @@ Responsibilities:
 - `fap/annotator.py`: orchestrate the diagnostic cascade
 - `fap/prompts.py`: build evaluator prompts for each diagnostic gate
 - `classification/mapper.py`: map primary failures into the four LIFE-HARNESS layers
-- `updater/agent.py`: generate targeted harness-update artifacts
+- `mining/patterns.py`: group repeated annotations into recurring failure patterns
+- `updater/agent.py`: decide the most local and effective harness fix for each pattern
+- `updater/staging.py`: write staged layer-specific updates
 - `updater/regression.py`: create regression-check notes and over-trigger warnings
+- `updater/promotion.py`: decide whether staged artifacts can become active
+- `scheduler.py`: run the daily offline evolution batch and promotion flow
 - `integrations/evaluator/client.py`: call the third-party `OpenAI-compatible` evaluator API
 
 ## Trajectory Log Contract
@@ -324,11 +342,162 @@ Keeping it separate preserves a clean distinction between:
 
 That will make future changes easier if some failure types later map to multiple update paths.
 
+## Failure Pattern Mining
+
+The system should not update the harness based on isolated single-episode failures alone.
+
+After annotation and classification, it should group repeated failures into recurring patterns.
+
+### Purpose
+
+Pattern mining exists to answer:
+
+- what failure mode repeats often enough to justify a harness change
+- which failures are merely noise
+- which layer should be updated first for maximum effect and minimum intervention
+
+### Mining Rules
+
+The first version should group failures using deterministic pattern keys built from fields such as:
+
+- `primary_failure_type`
+- tool name
+- repeated block reason
+- missing or malformed argument signature
+- repeated trajectory stagnation signature
+
+Examples:
+
+- repeated misuse of `get_balance` with symbol-like assets
+- repeated missing required protective fields
+- repeated inspect-only loops
+- repeated same blocked action with same reason
+
+### Mining Output
+
+Each mined pattern should include:
+
+- `pattern_id`
+- `pattern_type`
+- `frequency`
+- `target_layer`
+- `supporting_episodes`
+- `representative_evidence`
+
+This pattern record becomes the unit of work for the evolution updater.
+
 ## Evolution Updater
 
 The evolution updater is the stage that turns annotated failures into proposed harness improvements.
 
 It should be treated as a constrained coding or maintenance agent, not as an unconstrained auto-coder.
+
+### Evo Agent System Prompt Contract
+
+The evolution updater should be driven by a stable system instruction.
+
+This instruction should frame the updater as a coding agent that improves the runtime harness, not the underlying model, task set, or evaluator.
+
+The prompt contract should contain the following sections.
+
+#### System Instruction
+
+The agent is responsible for improving a runtime harness for a deterministic LLM-agent environment.
+
+Its goal is to improve task performance by adapting the runtime interface between the frozen model and the environment, without changing:
+
+- model weights
+- benchmark tasks
+- environment evaluation logic
+
+#### Inputs
+
+The prompt should explicitly mention three inputs:
+
+- `Current Harness`: `{HARNESS_DIR}`
+- `Trajectory Directory`: `{TRAJECTORY_DIR}`
+- `Design Guide`: `{DESIGN_GUIDE}`
+
+The model may receive these either inline or through referenced content, but the prompt must name them explicitly.
+
+#### Harness Design Principles
+
+The prompt should restate the four lifecycle layers:
+
+1. `Environment Contract Layer`
+2. `Procedural Skill Layer`
+3. `Action Realization Layer`
+4. `Trajectory Regulation Layer`
+
+It should also state the critical guardrail:
+
+- use these layers to address runtime-interface failures
+- do not solve tasks with hidden oracle information
+- do not use test labels
+- do not modify benchmark tasks
+- do not alter environment transitions
+- do not change evaluation criteria
+
+#### Analysis Requirements
+
+The prompt should instruct the agent to:
+
+- inspect previous trajectories
+- identify recurring failure patterns
+- locate the earliest lifecycle point where each pattern can be reliably detected or prevented
+
+The allowed lifecycle insertion points are:
+
+- before interaction, via contract clarification
+- during task conditioning, via skill retrieval
+- before environment execution, via validation or canonicalization
+- after execution, via trajectory monitoring and recovery
+
+The prompt should emphasize deterministic and mechanically identifiable failure types such as:
+
+- invalid action formats
+- wrong tool conventions
+- missing required fields
+- repeated noop actions
+- loops
+- premature submissions
+- budget exhaustion
+- recurring procedural mistakes
+
+#### Update Requirements
+
+The prompt should instruct the agent to propose and implement targeted updates that are:
+
+- evidence-triggered
+- local and minimal
+- non-oracular
+- evaluation-preserving
+- robust to unseen tasks from the same environment
+
+The prompt should explicitly prohibit overriding model reasoning when the correct action is ambiguous.
+
+#### Regression Check
+
+The prompt should require the updater to inspect whether a proposed change may:
+
+- over-trigger
+- block valid actions
+- inject misleading guidance
+- reduce performance on previously successful trajectories
+
+If negative side effects are found, the updater must revise the proposal.
+
+#### Output Requirements
+
+The prompt should require five output sections:
+
+1. dominant failure patterns found
+2. responsible harness layer for each update
+3. implemented code changes
+4. safety explanation under the deterministic environment contract
+5. remaining failure modes to monitor next
+
+This output contract should shape both human-readable reports and machine-usable updater artifacts.
 
 ### Inputs
 
@@ -371,6 +540,28 @@ For this repo, safety-first priority should apply:
 
 - prioritize `Layer 3` and `Layer 1`
 - prefer code-based enforcement in `Layer 3` over prompt-only fixes when the issue is technical
+
+### Four-Step Update Loop
+
+The updater should follow a fixed four-step logic:
+
+1. `Failure Pattern Mining`
+2. `Layer Mapping`
+3. `Implementation`
+4. `Regression Check`
+
+This keeps update behavior disciplined and auditable.
+
+### Layer Mapping Principle
+
+For each recurring failure pattern, the updater should choose the earliest lifecycle point where the failure can be detected or prevented cheaply and reliably.
+
+Priority:
+
+- fix with `Layer 3` if a deterministic validator or canonicalizer can solve it
+- otherwise fix with `Layer 1` if the issue is a stable contract or policy mismatch
+- use `Layer 4` for repeated post-execution degeneration patterns
+- use `Layer 2` when the issue is procedural weakness rather than deterministic invalidity
 
 ### Targeted Update Mapping
 
@@ -428,6 +619,70 @@ Purpose:
 
 - improve practical decision quality without changing model weights
 
+## Staged Implementation
+
+The first version should allow the coding agent to write staged harness updates before they become active.
+
+That means update generation is no longer limited to passive reports.
+
+### Staging Principle
+
+The coding agent may write into a staging area, but it must not modify the active harness directly.
+
+The flow is:
+
+```text
+Mined Pattern
+  -> Layer Mapping
+  -> Staged Update Write
+  -> Regression Check
+  -> Promotion Gate
+  -> Active Harness Artifact
+```
+
+### Update Forms By Layer
+
+#### Layer 1
+
+Write staged contract artifacts such as:
+
+- additional contract clauses
+- stronger tool-specific warnings
+- extra stable policy text
+
+#### Layer 2
+
+Write staged skill artifacts such as:
+
+- new skill cards
+- new anti-pattern guidance
+- new procedural sequences
+
+#### Layer 3
+
+Write staged action artifacts such as:
+
+- validator rules
+- canonicalization rules
+- block-message improvements
+
+#### Layer 4
+
+Write staged trajectory artifacts such as:
+
+- monitor rules
+- counters
+- repetition thresholds
+- recovery triggers
+
+### Update Requirements
+
+Every staged update must satisfy:
+
+- `precise triggering`: it activates only on clear trajectory or environment evidence
+- `minimality`: it is the smallest local change that addresses the failure
+- `non-overreach`: it does not override the model when the correct action remains ambiguous
+
 ## Regression Check
 
 Every proposed harness update must go through a regression-oriented review step.
@@ -443,6 +698,160 @@ This should produce `regression check notes` alongside each update candidate.
 
 The goal is to ensure the offline evolution loop does not harden the harness in a way that makes it brittle or unusable.
 
+## Scheduler And Promotion Flow
+
+The repo should support a daily batch scheduler for offline evolution.
+
+### Scheduler Model
+
+The first version should use a batch entry point, not a long-running daemon.
+
+Recommended command:
+
+```text
+python -m tradeharness.evolution.scheduler
+```
+
+This job should:
+
+1. load recent trajectory logs
+2. run annotation and pattern mining
+3. write staged updates
+4. run regression checks
+5. decide promotion
+6. persist the run snapshot
+
+External scheduling may be handled by `cron` or `launchd`.
+
+### Artifact Layout
+
+The first version should separate:
+
+- dated run outputs
+- staged updates
+- current active updates
+
+Recommended structure:
+
+```text
+var/evolution/runs/YYYY-MM-DD/
+tradeharness/evolution/artifacts/staging/
+tradeharness/evolution/artifacts/current/
+```
+
+### Layer Artifact Schema
+
+The active and staged artifact directories should contain layer-specific files such as:
+
+- `contract.json`
+- `skills.json`
+- `action_rules.json`
+- `trajectory_rules.json`
+
+#### `contract.json`
+
+- `version`
+- `generated_at`
+- `source_run_id`
+- `clauses`
+
+Each clause should contain:
+
+- `id`
+- `priority`
+- `rule_text`
+- `trigger_pattern`
+- `supporting_episodes`
+
+#### `skills.json`
+
+- `version`
+- `generated_at`
+- `source_run_id`
+- `skills`
+
+Each skill should contain:
+
+- `skill_id`
+- `title`
+- `tags`
+- `when_to_use`
+- `procedure`
+- `anti_patterns`
+- `source_episodes`
+
+#### `action_rules.json`
+
+- `version`
+- `generated_at`
+- `source_run_id`
+- `rules`
+
+Each rule should contain:
+
+- `rule_id`
+- `tool_name`
+- `condition`
+- `decision`
+- `message`
+- `supporting_episodes`
+
+#### `trajectory_rules.json`
+
+- `version`
+- `generated_at`
+- `source_run_id`
+- `rules`
+
+Each rule should contain:
+
+- `rule_id`
+- `pattern_type`
+- `window`
+- `threshold`
+- `decision`
+- `message`
+- `supporting_episodes`
+
+## Promotion Gate
+
+Staged updates should not become active automatically unless they pass a minimal promotion gate.
+
+### Promotion Conditions
+
+A staged artifact may be promoted only if:
+
+1. it meets the evidence threshold
+2. it has no hard regression warning
+3. it is additive rather than destructive
+
+### Evidence Threshold
+
+Each candidate should have at least `N` supporting episodes.
+
+The first version may default to `N = 1`, but the threshold should be configurable.
+
+### Hard Regression Warnings
+
+Any staged update should fail promotion if regression notes indicate risks such as:
+
+- `high_overtrigger_risk`
+- `ambiguous_action_override`
+- `conflicts_with_existing_rule`
+
+### Layer-Safe Promotion
+
+The first version should auto-promote only additive updates.
+
+Recommended policy:
+
+- `Layer 1`: may auto-promote
+- `Layer 2`: may auto-promote
+- `Layer 3`: manual or stricter promotion only
+- `Layer 4`: manual or stricter promotion only
+
+This balances learning speed with runtime safety.
+
 ## Output Artifacts
 
 The first version should write structured offline-evolution outputs, not source-code edits.
@@ -451,8 +860,11 @@ Required outputs:
 
 - `daily evolution report`
 - `annotated failures`
+- `mined failure patterns`
 - `layer update candidates`
+- `staged layer artifacts`
 - `regression check notes`
+- `promotion report`
 
 These artifacts should be patch-ready enough that a later implementation phase can:
 
@@ -469,6 +881,16 @@ The required runtime-side support is:
 - emit structured trajectory episodes
 - include step-level observation, decision summary, action, harness intervention, and environment feedback
 - capture termination reason and final outcome
+- read active additive harness artifacts on startup or per cycle
+
+The first version should only rehydrate additive artifacts from the `current` directory.
+
+That means:
+
+- Layer 1 appends active contract clauses
+- Layer 2 merges active skill cards
+- Layer 3 may later read active additive rule records
+- Layer 4 may later read active additive monitor records
 
 The runtime should not directly run offline evolution as part of the trading cycle.
 
@@ -485,8 +907,10 @@ This command should:
 1. load recent trajectory logs
 2. run FAP over selected episodes
 3. classify failures into the four layers
-4. run the updater on the top patterns
-5. emit offline-evolution artifacts
+4. mine recurring failure patterns
+5. run the updater on the top patterns
+6. write staged artifacts
+7. emit offline-evolution artifacts
 
 ## Non-Goals
 
@@ -521,5 +945,7 @@ The next step is to write an implementation plan for:
 - defining shared evolution schemas
 - implementing the evaluator-backed FAP cascade
 - mapping annotations into harness layers
-- generating targeted update artifacts with regression notes
-- wiring a daily offline batch entry point
+- mining recurring failure patterns
+- generating staged updates with regression notes
+- wiring a daily offline batch scheduler
+- defining promotion and active-artifact rehydration flow

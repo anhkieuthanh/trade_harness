@@ -16,6 +16,17 @@ class Settings:
     candle_limit: int
     trade_size_percent: float
     dry_run: bool
+    evaluator_base_url: str
+    evaluator_api_key: str
+    evaluator_model: str
+    trajectory_log_path: str
+    evolution_output_dir: str
+    evolution_runs_dir: str
+    evolution_minimum_support: int
+    active_contract_artifact_path: str
+    active_skills_artifact_path: str
+    active_action_rules_artifact_path: str
+    active_trajectory_rules_artifact_path: str
 
 
 def _parse_bool(value: str) -> bool:
@@ -47,4 +58,30 @@ def load_settings() -> Settings:
         candle_limit=int(os.getenv("CANDLE_LIMIT", "5")),
         trade_size_percent=float(os.getenv("TRADE_SIZE_PERCENT", "10")),
         dry_run=_parse_bool(os.getenv("DRY_RUN", "true")),
+        evaluator_base_url=os.getenv("EVALUATOR_BASE_URL", "https://example.invalid/v1"),
+        evaluator_api_key=os.getenv("EVALUATOR_API_KEY", ""),
+        evaluator_model=os.getenv("EVALUATOR_MODEL", "gpt-5.4"),
+        trajectory_log_path=os.getenv(
+            "TRAJECTORY_LOG_PATH",
+            "var/trajectories/episodes.jsonl",
+        ),
+        evolution_output_dir=os.getenv("EVOLUTION_OUTPUT_DIR", "var/evolution"),
+        evolution_runs_dir=os.getenv("EVOLUTION_RUNS_DIR", "var/evolution/runs"),
+        evolution_minimum_support=int(os.getenv("EVOLUTION_MINIMUM_SUPPORT", "1")),
+        active_contract_artifact_path=os.getenv(
+            "ACTIVE_CONTRACT_ARTIFACT_PATH",
+            "tradeharness/evolution/artifacts/current/contract.json",
+        ),
+        active_skills_artifact_path=os.getenv(
+            "ACTIVE_SKILLS_ARTIFACT_PATH",
+            "tradeharness/evolution/artifacts/current/skills.json",
+        ),
+        active_action_rules_artifact_path=os.getenv(
+            "ACTIVE_ACTION_RULES_ARTIFACT_PATH",
+            "tradeharness/evolution/artifacts/current/action_rules.json",
+        ),
+        active_trajectory_rules_artifact_path=os.getenv(
+            "ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH",
+            "tradeharness/evolution/artifacts/current/trajectory_rules.json",
+        ),
     )

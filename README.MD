@@ -7,9 +7,11 @@ Minimal local agent bridge between LM Studio and Binance Futures Testnet for `BT
 - `tradeharness/config/`: runtime settings
 - `tradeharness/domain/`: shared data contracts
 - `tradeharness/integrations/binance/`: low-level Binance client
+- `tradeharness/integrations/evaluator/`: OpenAI-compatible evaluator client for offline evolution
 - `tradeharness/integrations/lmstudio/`: LM Studio client and tool-request parsing
 - `tradeharness/tools/`: Binance tools exposed to the agent
 - `tradeharness/runtime/`: agent orchestration loop
+- `tradeharness/evolution/`: offline evolution, FAP, update candidates, regression notes
 
 ## Environment Contract Layer
 
@@ -59,6 +61,33 @@ The runtime includes a trajectory-regulation layer that supervises the health of
 
 This first phase is deterministic and local to the current runtime cycle.
 
+## Offline Evolution Block
+
+The repo now also includes an offline evolution block.
+
+- the runtime writes trajectory episodes to `TRAJECTORY_LOG_PATH`
+- offline evolution reads those episodes after the session
+- it runs a Failure Annotation Protocol cascade
+- it maps failures into LIFE-HARNESS layers
+- it mines recurring failure patterns
+- it writes staged layer artifacts
+- it promotes additive safe updates into active Layer 1 and Layer 2 artifacts
+
+This first phase uses an external `OpenAI-compatible` evaluator endpoint configured through:
+
+- `EVALUATOR_BASE_URL`
+- `EVALUATOR_API_KEY`
+- `EVALUATOR_MODEL`
+
+Additional evolution settings:
+
+- `EVOLUTION_RUNS_DIR`
+- `EVOLUTION_MINIMUM_SUPPORT`
+- `ACTIVE_CONTRACT_ARTIFACT_PATH`
+- `ACTIVE_SKILLS_ARTIFACT_PATH`
+- `ACTIVE_ACTION_RULES_ARTIFACT_PATH`
+- `ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH`
+
 ## What It Does
 
 - uses LM Studio as the agent brain
@@ -78,6 +107,7 @@ Fill in:
 
 - `BINANCE_API_KEY`
 - `BINANCE_API_SECRET`
+- `EVALUATOR_API_KEY`
 
 LM Studio defaults:
 
@@ -96,6 +126,70 @@ python3 -m tradeharness.main
 Real demo order mode:
 
 Set `DRY_RUN=false` in `.env`, then run the same command.
+
+Offline evolution batch:
+
+```bash
+cd /Users/atif/Public/TradeHarness
+python3 -m tradeharness.evolution.main
+```
+
+This produces:
+
+- a daily markdown report
+- annotated failure JSON
+- mined failure patterns
+- layer update candidates
+- staged layer artifacts
+- regression check notes
+- promotion report
+
+Daily scheduled-style batch:
+
+```bash
+cd /Users/atif/Public/TradeHarness
+python3 -m tradeharness.evolution.scheduler
+```
+
+This writes a dated run snapshot under `EVOLUTION_RUNS_DIR`, for example:
+
+- `var/evolution/runs/2026-06-08/`
+
+Active additive artifacts are promoted into:
+
+- `tradeharness/evolution/artifacts/current/contract.json`
+- `tradeharness/evolution/artifacts/current/skills.json`
+
+Layer 3 and Layer 4 can also rehydrate active deterministic artifacts when present:
+
+- `tradeharness/evolution/artifacts/current/action_rules.json`
+- `tradeharness/evolution/artifacts/current/trajectory_rules.json`
+
+## Scheduling
+
+Two local scheduling options are supported for the daily evolution batch.
+
+### Cron
+
+Example daily run at 01:00:
+
+```cron
+0 1 * * * cd /Users/atif/Public/TradeHarness && /usr/bin/python3 -m tradeharness.evolution.scheduler >> /Users/atif/Public/TradeHarness/var/evolution/cron.log 2>&1
+```
+
+### launchd
+
+Use the template at:
+
+- `ops/launchd/com.tradeharness.evolution.plist`
+
+Load it with:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.tradeharness.evolution.plist 2>/dev/null || true
+cp /Users/atif/Public/TradeHarness/ops/launchd/com.tradeharness.evolution.plist ~/Library/LaunchAgents/com.tradeharness.evolution.plist
+launchctl load ~/Library/LaunchAgents/com.tradeharness.evolution.plist
+```
 
 ## Agent Model
 

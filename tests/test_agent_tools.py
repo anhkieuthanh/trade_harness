@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 import unittest
 
 from tradeharness.tools.binance import BinanceToolset
@@ -284,6 +287,47 @@ class TrajectoryRegulationTests(unittest.TestCase):
 
         self.assertEqual(result["decision"], "ALLOW")
 
+    def test_dynamic_trajectory_rule_can_warn_on_repeat_tool(self) -> None:
+        original = os.environ.get("ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH")
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                path = os.path.join(temp_dir, "trajectory_rules.json")
+                with open(path, "w", encoding="utf-8") as handle:
+                    json.dump(
+                        {
+                            "rules": [
+                                {
+                                    "rule_id": "repeat-balance",
+                                    "pattern_type": "repeat_tool",
+                                    "window": 3,
+                                    "threshold": 3,
+                                    "decision": "WARN",
+                                    "message": "Dynamic repeat tool warning.",
+                                    "watched_tools": ["get_balance"],
+                                }
+                            ]
+                        },
+                        handle,
+                    )
+                os.environ["ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH"] = path
+                result = regulate_trajectory(
+                    history=[
+                        {"event": "tool", "tool_name": "get_balance", "blocked": False},
+                        {"event": "tool", "tool_name": "get_balance", "blocked": False},
+                        {"event": "tool", "tool_name": "get_balance", "blocked": False},
+                    ],
+                    steps_remaining=5,
+                    final_answer_present=False,
+                )
+        finally:
+            if original is None:
+                os.environ.pop("ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH", None)
+            else:
+                os.environ["ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH"] = original
+
+        self.assertEqual(result["decision"], "WARN")
+        self.assertIn("Dynamic repeat tool warning.", result["reason"])
+
 
 class TrajectoryRuntimeHelpersTests(unittest.TestCase):
     def test_build_trajectory_warning_feedback_contains_reason(self) -> None:
@@ -436,6 +480,46 @@ class ActionRealizationGateTests(unittest.TestCase):
         )
 
         self.assertEqual(result["decision"], "EXECUTE")
+
+    def test_dynamic_action_rule_can_block_matching_execution(self) -> None:
+        original = os.environ.get("ACTIVE_ACTION_RULES_ARTIFACT_PATH")
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                path = os.path.join(temp_dir, "action_rules.json")
+                with open(path, "w", encoding="utf-8") as handle:
+                    json.dump(
+                        {
+                            "rules": [
+                                {
+                                    "rule_id": "block-flat-open-long",
+                                    "tool_name": "open_long",
+                                    "condition": {"kind": "is_open", "value": False},
+                                    "decision": "BLOCK",
+                                    "message": "Dynamic action rule blocked this entry.",
+                                }
+                            ]
+                        },
+                        handle,
+                    )
+                os.environ["ACTIVE_ACTION_RULES_ARTIFACT_PATH"] = path
+                result = realize_action(
+                    tool_name="open_long",
+                    arguments={"symbol": "BTCUSDT"},
+                    position_state={"side": "FLAT", "is_open": False},
+                    inspected_state={
+                        "market_snapshot": True,
+                        "position": True,
+                        "balance": True,
+                    },
+                )
+        finally:
+            if original is None:
+                os.environ.pop("ACTIVE_ACTION_RULES_ARTIFACT_PATH", None)
+            else:
+                os.environ["ACTIVE_ACTION_RULES_ARTIFACT_PATH"] = original
+
+        self.assertEqual(result["decision"], "BLOCK")
+        self.assertIn("Dynamic action rule blocked this entry.", result["reason"])
 
 
 if __name__ == "__main__":

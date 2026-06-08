@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+
 BASE_EXECUTION_SAFETY_RULES = [
     "Inspect market state before trading.",
     "Inspect current position before opening or closing.",
@@ -37,12 +40,29 @@ TOOL_CONTRACT_RULES = {
 }
 
 
+def load_active_contract_clauses(path: str | None = None) -> list[str]:
+    resolved_path = path or os.getenv(
+        "ACTIVE_CONTRACT_ARTIFACT_PATH",
+        "tradeharness/evolution/artifacts/current/contract.json",
+    )
+    if not os.path.exists(resolved_path):
+        return []
+    with open(resolved_path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    return [
+        str(item["rule_text"])
+        for item in payload.get("clauses", [])
+        if item.get("rule_text")
+    ]
+
+
 def build_environment_contract(symbol: str) -> str:
-    rules = "\n".join(f"- {rule}" for rule in BASE_EXECUTION_SAFETY_RULES)
+    rules = BASE_EXECUTION_SAFETY_RULES + load_active_contract_clauses()
+    rendered_rules = "\n".join(f"- {rule}" for rule in rules)
     return "\n".join(
         [
             f"Environment Contract for {symbol} on Binance Futures Testnet:",
-            rules,
+            rendered_rules,
             "Use get_market_snapshot, get_position, and get_balance before requesting execution tools.",
             "Before requesting any execution tool, summarize what state was inspected and why the action follows.",
         ]

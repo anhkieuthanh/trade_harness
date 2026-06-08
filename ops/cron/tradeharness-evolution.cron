@@ -1,0 +1,1 @@
+0 1 * * * cd /Users/atif/Public/TradeHarness && /usr/bin/python3 -m tradeharness.evolution.scheduler >> /Users/atif/Public/TradeHarness/var/evolution/cron.log 2>&1

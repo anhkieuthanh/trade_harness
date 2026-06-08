@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from tradeharness.config.settings import Settings
+from tradeharness.evolution.schemas import build_episode_record, build_step_record
+from tradeharness.evolution.storage.trajectories import append_episode_record
 from tradeharness.integrations.binance.client import BinanceFuturesTestnetClient
 from tradeharness.integrations.lmstudio.client import (
     LMStudioClient,
@@ -71,7 +75,76 @@ def build_trajectory_stop_summary(regulation_result: dict[str, Any]) -> str:
     )
 
 
+def build_runtime_step_record(
+    *,
+    step_index: int,
+    observation: dict[str, Any],
+    decision_summary: str,
+    action: dict[str, Any],
+    harness_intervention: dict[str, Any],
+    environment_feedback: dict[str, Any],
+) -> dict[str, Any]:
+    return build_step_record(
+        step_index=step_index,
+        observation=observation,
+        decision_summary=decision_summary,
+        action=action,
+        harness_intervention=harness_intervention,
+        environment_feedback=environment_feedback,
+    )
+
+
+def build_episode_termination_record(
+    *,
+    episode_id: str,
+    symbol: str,
+    mode: str,
+    started_at: str,
+    ended_at: str,
+    steps: list[dict[str, Any]],
+    final_status: str,
+    termination_reason: str,
+    final_outcome: dict[str, Any],
+) -> dict[str, Any]:
+    return build_episode_record(
+        episode_id=episode_id,
+        symbol=symbol,
+        mode=mode,
+        started_at=started_at,
+        ended_at=ended_at,
+        final_status=final_status,
+        termination_reason=termination_reason,
+        steps=steps,
+        final_outcome=final_outcome,
+    )
+
+
 def run_agent_cycle(settings: Settings) -> None:
+    episode_id = f"episode-{uuid4().hex}"
+    started_at = datetime.now(timezone.utc).isoformat()
+    episode_steps: list[dict[str, Any]] = []
+
+    def finalize_episode(
+        *,
+        final_status: str,
+        termination_reason: str,
+        final_outcome: dict[str, Any],
+    ) -> None:
+        append_episode_record(
+            settings.trajectory_log_path,
+            build_episode_termination_record(
+                episode_id=episode_id,
+                symbol=settings.symbol,
+                mode="dry_run" if settings.dry_run else "live",
+                started_at=started_at,
+                ended_at=datetime.now(timezone.utc).isoformat(),
+                steps=episode_steps,
+                final_status=final_status,
+                termination_reason=termination_reason,
+                final_outcome=final_outcome,
+            ),
+        )
+
     binance = BinanceFuturesTestnetClient(
         settings.binance_api_key,
         settings.binance_api_secret,
@@ -175,6 +248,26 @@ def run_agent_cycle(settings: Settings) -> None:
                             "content": build_action_block_feedback(gate_result),
                         }
                     )
+                    episode_steps.append(
+                        build_runtime_step_record(
+                            step_index=len(episode_steps) + 1,
+                            observation={
+                                "position_state": current_position_state,
+                                "inspected_state": dict(inspected_state),
+                            },
+                            decision_summary=get_message_content(response).strip()
+                            or f"Requested tool {tool_request.name}.",
+                            action={
+                                "tool": tool_request.name,
+                                "arguments": tool_request.arguments,
+                            },
+                            harness_intervention=gate_result,
+                            environment_feedback={
+                                "blocked": True,
+                                "feedback": build_action_block_feedback(gate_result),
+                            },
+                        )
+                    )
                     print(f"action_realization=BLOCK result={json.dumps(gate_result)}")
                     regulation_result = regulate_trajectory(
                         history=trajectory_history,
@@ -198,9 +291,22 @@ def run_agent_cycle(settings: Settings) -> None:
                             "trajectory_regulation=STOP "
                             f"result={json.dumps(regulation_result)}"
                         )
+                        finalize_episode(
+                            final_status="FAILED",
+                            termination_reason="trajectory_regulation_stop",
+                            final_outcome={
+                                "final": "trajectory_regulation_stop",
+                                "reason": regulation_result["reason"],
+                            },
+                        )
                         print(f"agent={build_trajectory_stop_summary(regulation_result)}")
                         return
                     if blocked_attempts > MAX_ACTION_REALIZATION_RETRIES:
+                        finalize_episode(
+                            final_status="FAILED",
+                            termination_reason="blocked_by_action_realization_limit",
+                            final_outcome={"final": "blocked_by_action_realization_limit"},
+                        )
                         print('agent={"final":"blocked_by_action_realization_limit"}')
                         return
                     break
@@ -213,6 +319,23 @@ def run_agent_cycle(settings: Settings) -> None:
                         "tool_name": tool_request.name,
                         "blocked": False,
                     }
+                )
+                episode_steps.append(
+                    build_runtime_step_record(
+                        step_index=len(episode_steps) + 1,
+                        observation={
+                            "position_state": current_position_state,
+                            "inspected_state": dict(inspected_state),
+                        },
+                        decision_summary=get_message_content(response).strip()
+                        or f"Requested tool {tool_request.name}.",
+                        action={
+                            "tool": tool_request.name,
+                            "arguments": tool_request.arguments,
+                        },
+                        harness_intervention={"decision": "EXECUTE", "layer": "none"},
+                        environment_feedback=tool_result,
+                    )
                 )
                 regulation_result = regulate_trajectory(
                     history=trajectory_history,
@@ -236,6 +359,14 @@ def run_agent_cycle(settings: Settings) -> None:
                     print(
                         "trajectory_regulation=STOP "
                         f"result={json.dumps(regulation_result)}"
+                    )
+                    finalize_episode(
+                        final_status="FAILED",
+                        termination_reason="trajectory_regulation_stop",
+                        final_outcome={
+                            "final": "trajectory_regulation_stop",
+                            "reason": regulation_result["reason"],
+                        },
                     )
                     print(f"agent={build_trajectory_stop_summary(regulation_result)}")
                     return
@@ -276,10 +407,51 @@ def run_agent_cycle(settings: Settings) -> None:
                 "trajectory_regulation=STOP "
                 f"result={json.dumps(regulation_result)}"
             )
+            episode_steps.append(
+                build_runtime_step_record(
+                    step_index=len(episode_steps) + 1,
+                    observation={"trajectory_history_size": len(trajectory_history)},
+                    decision_summary=content or "No final answer generated.",
+                    action={"final_response": content},
+                    harness_intervention=regulation_result,
+                    environment_feedback={
+                        "final": "trajectory_regulation_stop",
+                        "reason": regulation_result["reason"],
+                    },
+                )
+            )
+            finalize_episode(
+                final_status="FAILED",
+                termination_reason="trajectory_regulation_stop",
+                final_outcome={
+                    "final": "trajectory_regulation_stop",
+                    "reason": regulation_result["reason"],
+                },
+            )
             print(f"agent={build_trajectory_stop_summary(regulation_result)}")
             return
         if content:
+            episode_steps.append(
+                build_runtime_step_record(
+                    step_index=len(episode_steps) + 1,
+                    observation={"trajectory_history_size": len(trajectory_history)},
+                    decision_summary=content,
+                    action={"final_response": content},
+                    harness_intervention={"decision": "ALLOW", "layer": "none"},
+                    environment_feedback={"emitted": True},
+                )
+            )
+            finalize_episode(
+                final_status="SUCCESS",
+                termination_reason="final_response_returned",
+                final_outcome={"final": content},
+            )
             print(f"agent={content}")
-        return
+            return
 
+    finalize_episode(
+        final_status="FAILED",
+        termination_reason="max_tool_steps_reached",
+        final_outcome={"final": "max tool steps reached"},
+    )
     print('agent={"final":"max tool steps reached"}')

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "generated_at": "2026-06-08T08:54:46.823065+00:00",
+  "source_run_id": "2026-06-08T08:54:31.206837+00:00",
+  "clauses": [
+    {
+      "id": "contract-1",
+      "priority": 100,
+      "rule_text": "Add stricter contract clauses and tool guidance in Layer 1.",
+      "trigger_pattern": "environment_contract",
+      "supporting_episodes": [
+        "episode-f9f4a06f35464550a37c385e72f46523"
+      ]
+    }
+  ]
+}

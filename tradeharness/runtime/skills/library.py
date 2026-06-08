@@ -1,8 +1,23 @@
 from __future__ import annotations
 
+import json
+import os
+
+
+def load_active_skill_cards(path: str | None = None) -> list[dict[str, object]]:
+    resolved_path = path or os.getenv(
+        "ACTIVE_SKILLS_ARTIFACT_PATH",
+        "tradeharness/evolution/artifacts/current/skills.json",
+    )
+    if not os.path.exists(resolved_path):
+        return []
+    with open(resolved_path, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    return [dict(item) for item in payload.get("skills", [])]
+
 
 def get_skill_library() -> list[dict[str, object]]:
-    return [
+    base_skills = [
         {
             "skill_id": "entry_confirm_state_first",
             "title": "Entry confirmation after state inspection",
@@ -45,3 +60,4 @@ def get_skill_library() -> list[dict[str, object]]:
             ),
         },
     ]
+    return base_skills + load_active_skill_cards()
