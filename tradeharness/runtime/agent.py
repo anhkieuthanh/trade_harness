@@ -97,6 +97,8 @@ def build_runtime_step_record(
 def build_episode_termination_record(
     *,
     episode_id: str,
+    task_id: str,
+    harness_version: str,
     symbol: str,
     mode: str,
     started_at: str,
@@ -108,6 +110,8 @@ def build_episode_termination_record(
 ) -> dict[str, Any]:
     return build_episode_record(
         episode_id=episode_id,
+        task_id=task_id,
+        harness_version=harness_version,
         symbol=symbol,
         mode=mode,
         started_at=started_at,
@@ -134,6 +138,8 @@ def run_agent_cycle(settings: Settings) -> None:
             settings.trajectory_log_path,
             build_episode_termination_record(
                 episode_id=episode_id,
+                task_id=settings.task_id,
+                harness_version=settings.harness_version,
                 symbol=settings.symbol,
                 mode="dry_run" if settings.dry_run else "live",
                 started_at=started_at,

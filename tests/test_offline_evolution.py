@@ -10,6 +10,10 @@ from tradeharness.evolution.classification.mapper import map_failure_to_layer
 from tradeharness.evolution.fap.annotator import annotate_episode_failure
 from tradeharness.evolution.fap.prompts import build_fap_gate_prompt
 from tradeharness.evolution.main import run_offline_evolution
+from tradeharness.evolution.metrics import (
+    summarize_pass_metrics,
+    summarize_pass_metrics_by_harness_version,
+)
 from tradeharness.evolution.mining.patterns import mine_failure_patterns
 from tradeharness.evolution.scheduler import build_run_output_dir
 from tradeharness.evolution.schemas import (
@@ -24,6 +28,7 @@ from tradeharness.evolution.updater.promotion import should_promote_candidate
 from tradeharness.evolution.updater.prompting import build_evolution_system_prompt
 from tradeharness.evolution.updater.regression import build_regression_note
 from tradeharness.evolution.updater.staging import build_staged_layer_artifacts
+from tradeharness.evolution.versioning import build_next_harness_meta
 from tradeharness.integrations.evaluator.client import EvaluatorClient
 from tradeharness.runtime.contracts.environment import build_environment_contract
 from tradeharness.runtime.agent import (
@@ -72,6 +77,8 @@ class EvolutionSchemaTests(unittest.TestCase):
 
         episode = build_episode_record(
             episode_id="episode-1",
+            task_id="task-1",
+            harness_version="v1",
             symbol="BTCUSDT",
             mode="demo",
             started_at="2026-06-08T00:00:00Z",
@@ -83,6 +90,8 @@ class EvolutionSchemaTests(unittest.TestCase):
         )
 
         self.assertEqual(episode["episode_id"], "episode-1")
+        self.assertEqual(episode["task_id"], "task-1")
+        self.assertEqual(episode["harness_version"], "v1")
         self.assertEqual(len(episode["steps"]), 1)
         self.assertEqual(
             episode["termination_reason"],
@@ -112,6 +121,20 @@ class EvolutionSchemaTests(unittest.TestCase):
         self.assertTrue(hasattr(settings, "evaluator_api_key"))
         self.assertTrue(hasattr(settings, "trajectory_log_path"))
 
+    def test_load_settings_prefers_harness_meta_version_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meta_path = os.path.join(temp_dir, "harness_meta.json")
+            with open(meta_path, "w", encoding="utf-8") as handle:
+                json.dump({"harness_version": "v7"}, handle)
+
+            os.environ["ACTIVE_HARNESS_META_ARTIFACT_PATH"] = meta_path
+            os.environ["HARNESS_VERSION"] = "manual-fallback"
+
+            settings = load_settings()
+
+        self.assertEqual(settings.harness_version, "v7")
+        self.assertEqual(settings.active_harness_meta_artifact_path, meta_path)
+
 
 class RuntimeTrajectoryLoggingTests(unittest.TestCase):
     def test_build_runtime_step_record_captures_required_step_fields(self) -> None:
@@ -131,6 +154,8 @@ class RuntimeTrajectoryLoggingTests(unittest.TestCase):
     def test_build_episode_termination_record_includes_final_status(self) -> None:
         record = build_episode_termination_record(
             episode_id="episode-1",
+            task_id="task-1",
+            harness_version="v1",
             symbol="BTCUSDT",
             mode="demo",
             started_at="2026-06-08T00:00:00Z",
@@ -142,6 +167,8 @@ class RuntimeTrajectoryLoggingTests(unittest.TestCase):
         )
 
         self.assertEqual(record["episode_id"], "episode-1")
+        self.assertEqual(record["task_id"], "task-1")
+        self.assertEqual(record["harness_version"], "v1")
         self.assertEqual(record["mode"], "demo")
         self.assertEqual(record["final_status"], "FAILED")
 
@@ -199,6 +226,71 @@ class FailurePatternMiningTests(unittest.TestCase):
         self.assertEqual(len(patterns), 1)
         self.assertEqual(patterns[0]["frequency"], 2)
         self.assertEqual(patterns[0]["target_layer"], "layer_1")
+
+
+class PassMetricsTests(unittest.TestCase):
+    def test_summarize_pass_metrics_returns_pass_at_1(self) -> None:
+        episodes = [
+            {
+                "episode_id": "ep-1",
+                "harness_version": "v1",
+                "final_status": "SUCCESS",
+                "started_at": "2026-06-08T00:00:00Z",
+            },
+            {
+                "episode_id": "ep-2",
+                "harness_version": "v1",
+                "final_status": "SUCCESS",
+                "started_at": "2026-06-08T00:01:00Z",
+            },
+            {
+                "episode_id": "ep-3",
+                "harness_version": "v1",
+                "final_status": "SUCCESS",
+                "started_at": "2026-06-08T00:02:00Z",
+            },
+            {
+                "episode_id": "ep-4",
+                "harness_version": "v2",
+                "final_status": "FAILED",
+                "started_at": "2026-06-08T00:03:00Z",
+            },
+        ]
+
+        summary = summarize_pass_metrics(episodes)
+
+        self.assertEqual(summary["pass_at_1"]["total_episodes"], 4)
+        self.assertEqual(summary["pass_at_1"]["passed_episodes"], 3)
+        self.assertAlmostEqual(summary["pass_at_1"]["pass_at_1"], 0.75)
+
+    def test_summarize_pass_metrics_by_harness_version_groups_versions(self) -> None:
+        summary = summarize_pass_metrics_by_harness_version(
+            [
+                {
+                    "episode_id": "ep-1",
+                    "harness_version": "v1",
+                    "final_status": "SUCCESS",
+                    "started_at": "2026-06-08T00:00:00Z",
+                },
+                {
+                    "episode_id": "ep-2",
+                    "harness_version": "v1",
+                    "final_status": "FAILED",
+                    "started_at": "2026-06-08T00:01:00Z",
+                },
+                {
+                    "episode_id": "ep-3",
+                    "harness_version": "v2",
+                    "final_status": "SUCCESS",
+                    "started_at": "2026-06-08T00:02:00Z",
+                },
+            ]
+        )
+
+        self.assertEqual(summary[0]["harness_version"], "v1")
+        self.assertAlmostEqual(summary[0]["pass_at_1"], 0.5)
+        self.assertEqual(summary[1]["harness_version"], "v2")
+        self.assertAlmostEqual(summary[1]["pass_at_1"], 1.0)
 
 
 class FAPAnnotatorTests(unittest.TestCase):
@@ -342,6 +434,16 @@ class StagingAndPromotionTests(unittest.TestCase):
 
         self.assertFalse(decision["promote"])
 
+    def test_build_next_harness_meta_increments_semver_like_revision(self) -> None:
+        next_meta = build_next_harness_meta(
+            current_meta={"harness_version": "v4"},
+            source_run_id="2026-06-08T00:00:00+00:00",
+        )
+
+        self.assertEqual(next_meta["harness_version"], "v5")
+        self.assertEqual(next_meta["revision"], 5)
+        self.assertEqual(next_meta["previous_harness_version"], "v4")
+
 
 class EvolutionSchedulerTests(unittest.TestCase):
     def test_build_run_output_dir_appends_date_partition(self) -> None:
@@ -406,8 +508,6 @@ class OfflineEvolutionMainTests(unittest.TestCase):
     def test_run_offline_evolution_returns_named_artifact_paths(self) -> None:
         class FakeEvaluator:
             def complete(self, *, system_prompt: str, user_prompt: str):
-                if "action_realization" in user_prompt:
-                    return {"matched": True, "evidence": ["plain text instead of tool"]}
                 return {"matched": False, "evidence": []}
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -417,6 +517,8 @@ class OfflineEvolutionMainTests(unittest.TestCase):
                 trajectory_log_path,
                 {
                     "episode_id": "episode-1",
+                    "task_id": "task-1",
+                    "harness_version": "v1",
                     "symbol": "BTCUSDT",
                     "mode": "demo",
                     "started_at": "2026-06-08T00:00:00Z",
@@ -432,6 +534,11 @@ class OfflineEvolutionMainTests(unittest.TestCase):
                 trajectory_log_path=trajectory_log_path,
                 output_dir=output_dir,
                 evaluator=FakeEvaluator(),
+                active_harness_meta_artifact_path=os.path.join(
+                    temp_dir,
+                    "current",
+                    "harness_meta.json",
+                ),
             )
 
             self.assertIn("daily_report_path", result)
@@ -440,11 +547,30 @@ class OfflineEvolutionMainTests(unittest.TestCase):
             self.assertIn("regression_notes_path", result)
             self.assertIn("patterns_path", result)
             self.assertIn("promotion_report_path", result)
+            self.assertIn("pass_metrics_path", result)
             self.assertIn("staged_contract_path", result)
             self.assertIn("active_contract_artifact_path", result)
             self.assertIn("active_skills_artifact_path", result)
+            self.assertIn("active_harness_meta_artifact_path", result)
             self.assertTrue(os.path.exists(result["annotations_path"]))
             self.assertTrue(os.path.exists(result["active_contract_artifact_path"]))
+            self.assertTrue(os.path.exists(result["pass_metrics_path"]))
+            self.assertTrue(os.path.exists(result["active_harness_meta_artifact_path"]))
+
+            with open(result["daily_report_path"], "r", encoding="utf-8") as handle:
+                report = handle.read()
+
+            self.assertIn("Pass@1", report)
+            self.assertIn("Harness Version Metrics", report)
+
+            with open(
+                result["active_harness_meta_artifact_path"],
+                "r",
+                encoding="utf-8",
+            ) as handle:
+                harness_meta = json.load(handle)
+
+            self.assertEqual(harness_meta["harness_version"], "v1")
 
 
 if __name__ == "__main__":

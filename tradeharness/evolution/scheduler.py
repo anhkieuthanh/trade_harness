@@ -31,6 +31,7 @@ def main() -> None:
         minimum_support=settings.evolution_minimum_support,
         active_contract_artifact_path=settings.active_contract_artifact_path,
         active_skills_artifact_path=settings.active_skills_artifact_path,
+        active_harness_meta_artifact_path=settings.active_harness_meta_artifact_path,
     )
     print(result)
 

@@ -87,6 +87,18 @@ Additional evolution settings:
 - `ACTIVE_SKILLS_ARTIFACT_PATH`
 - `ACTIVE_ACTION_RULES_ARTIFACT_PATH`
 - `ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH`
+- `ACTIVE_HARNESS_META_ARTIFACT_PATH`
+
+Pass metrics settings:
+
+- `HARNESS_VERSION`
+- `TASK_ID`
+
+Runtime versioning behavior:
+
+- `HARNESS_VERSION` is now a fallback/manual seed only
+- runtime prefers the promoted meta artifact at `ACTIVE_HARNESS_META_ARTIFACT_PATH`
+- offline evolution bumps harness version automatically after a successful promotion
 
 ## What It Does
 
@@ -138,6 +150,7 @@ This produces:
 
 - a daily markdown report
 - annotated failure JSON
+- pass metrics JSON with `Pass@1`
 - mined failure patterns
 - layer update candidates
 - staged layer artifacts
@@ -159,11 +172,18 @@ Active additive artifacts are promoted into:
 
 - `tradeharness/evolution/artifacts/current/contract.json`
 - `tradeharness/evolution/artifacts/current/skills.json`
+- `tradeharness/evolution/artifacts/current/harness_meta.json`
 
 Layer 3 and Layer 4 can also rehydrate active deterministic artifacts when present:
 
 - `tradeharness/evolution/artifacts/current/action_rules.json`
 - `tradeharness/evolution/artifacts/current/trajectory_rules.json`
+
+## Pass Metrics
+
+The offline evolution block now tracks one harness-level success metric:
+
+- `Pass@1`: percentage of episodes that finish successfully on a single run
 
 ## Scheduling
 

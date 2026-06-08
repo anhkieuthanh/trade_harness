@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 
@@ -27,6 +28,9 @@ class Settings:
     active_skills_artifact_path: str
     active_action_rules_artifact_path: str
     active_trajectory_rules_artifact_path: str
+    active_harness_meta_artifact_path: str
+    harness_version: str
+    task_id: str
 
 
 def _parse_bool(value: str) -> bool:
@@ -45,17 +49,37 @@ def _load_dotenv_file(path: str = ".env") -> None:
             os.environ.setdefault(key.strip(), value.strip())
 
 
+def _load_harness_version(*, meta_path: str, fallback: str) -> str:
+    if not os.path.exists(meta_path):
+        return fallback
+    try:
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+    resolved = str(payload.get("harness_version", "")).strip()
+    return resolved or fallback
+
+
 def load_settings() -> Settings:
     _load_dotenv_file()
+    symbol = os.getenv("SYMBOL", "BTCUSDT")
+    candle_interval = os.getenv("CANDLE_INTERVAL", "1m")
+    candle_limit = int(os.getenv("CANDLE_LIMIT", "5"))
+    active_harness_meta_artifact_path = os.getenv(
+        "ACTIVE_HARNESS_META_ARTIFACT_PATH",
+        "tradeharness/evolution/artifacts/current/harness_meta.json",
+    )
     return Settings(
         binance_api_key=os.environ["BINANCE_API_KEY"],
         binance_api_secret=os.environ["BINANCE_API_SECRET"],
         lmstudio_base_url=os.getenv("LMSTUDIO_BASE_URL", "http://192.168.10.17:1234/v1"),
         lmstudio_model=os.getenv("LMSTUDIO_MODEL", "google/gemma-4-e2b"),
-        symbol=os.getenv("SYMBOL", "BTCUSDT"),
+        symbol=symbol,
         poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "30")),
-        candle_interval=os.getenv("CANDLE_INTERVAL", "1m"),
-        candle_limit=int(os.getenv("CANDLE_LIMIT", "5")),
+        candle_interval=candle_interval,
+        candle_limit=candle_limit,
         trade_size_percent=float(os.getenv("TRADE_SIZE_PERCENT", "10")),
         dry_run=_parse_bool(os.getenv("DRY_RUN", "true")),
         evaluator_base_url=os.getenv("EVALUATOR_BASE_URL", "https://example.invalid/v1"),
@@ -83,5 +107,14 @@ def load_settings() -> Settings:
         active_trajectory_rules_artifact_path=os.getenv(
             "ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH",
             "tradeharness/evolution/artifacts/current/trajectory_rules.json",
+        ),
+        active_harness_meta_artifact_path=active_harness_meta_artifact_path,
+        harness_version=_load_harness_version(
+            meta_path=active_harness_meta_artifact_path,
+            fallback=os.getenv("HARNESS_VERSION", "local"),
+        ),
+        task_id=os.getenv(
+            "TASK_ID",
+            f"trade:{symbol}:{candle_interval}:{candle_limit}:inspect_then_decide",
         ),
     )

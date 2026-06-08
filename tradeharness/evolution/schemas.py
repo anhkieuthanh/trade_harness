@@ -25,6 +25,8 @@ def build_step_record(
 def build_episode_record(
     *,
     episode_id: str,
+    task_id: str,
+    harness_version: str,
     symbol: str,
     mode: str,
     started_at: str,
@@ -36,6 +38,8 @@ def build_episode_record(
 ) -> dict[str, Any]:
     return {
         "episode_id": episode_id,
+        "task_id": task_id,
+        "harness_version": harness_version,
         "symbol": symbol,
         "mode": mode,
         "started_at": started_at,

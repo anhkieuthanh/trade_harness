@@ -6,6 +6,10 @@ from typing import Any
 
 from tradeharness.config.settings import load_settings
 from tradeharness.evolution.fap.annotator import annotate_episode_failure
+from tradeharness.evolution.metrics import (
+    summarize_pass_metrics,
+    summarize_pass_metrics_by_harness_version,
+)
 from tradeharness.evolution.mining.patterns import mine_failure_patterns
 from tradeharness.evolution.storage.artifacts import (
     write_json_artifact,
@@ -16,22 +20,47 @@ from tradeharness.evolution.updater.agent import build_update_candidates
 from tradeharness.evolution.updater.promotion import build_promotion_report
 from tradeharness.evolution.updater.regression import build_regression_note
 from tradeharness.evolution.updater.staging import build_staged_layer_artifacts
+from tradeharness.evolution.versioning import (
+    build_next_harness_meta,
+    load_harness_meta,
+)
 from tradeharness.integrations.evaluator.client import EvaluatorClient
 
 
 def build_daily_report_lines(
     *,
+    pass_metrics: dict[str, Any],
+    version_summaries: list[dict[str, Any]],
     annotations: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
 ) -> list[str]:
+    pass_at_1_value = pass_metrics["pass_at_1"]["pass_at_1"]
     lines = [
         "# Offline Evolution Daily Report",
         "",
         f"- Episodes analyzed: {len(annotations)}",
+        f"- Pass@1: {pass_at_1_value:.2%}",
         f"- Update candidates: {len(candidates)}",
         "",
-        "## Dominant Failure Patterns",
+        "## Harness Version Metrics",
     ]
+    if version_summaries:
+        for item in version_summaries:
+            lines.append(
+                "- "
+                f"{item['harness_version']}: "
+                f"episodes={item['episode_count']}, "
+                f"Pass@1={item['pass_at_1']:.2%}"
+            )
+    else:
+        lines.append("- No harness-version metrics available.")
+
+    lines.extend(
+        [
+            "",
+        "## Dominant Failure Patterns",
+        ]
+    )
     if annotations:
         for item in annotations:
             lines.append(
@@ -60,9 +89,12 @@ def run_offline_evolution(
     minimum_support: int = 1,
     active_contract_artifact_path: str = "tradeharness/evolution/artifacts/current/contract.json",
     active_skills_artifact_path: str = "tradeharness/evolution/artifacts/current/skills.json",
+    active_harness_meta_artifact_path: str = "tradeharness/evolution/artifacts/current/harness_meta.json",
 ) -> dict[str, str]:
     run_id = datetime.now(timezone.utc).isoformat()
     episodes = load_trajectory_episodes(trajectory_log_path)
+    pass_metrics = summarize_pass_metrics(episodes)
+    version_summaries = summarize_pass_metrics_by_harness_version(episodes)
     annotations = [
         annotate_episode_failure(episode=episode, evaluator=evaluator)
         for episode in episodes
@@ -84,6 +116,8 @@ def run_offline_evolution(
         minimum_support=minimum_support,
     )
     report_lines = build_daily_report_lines(
+        pass_metrics=pass_metrics,
+        version_summaries=version_summaries,
         annotations=annotations,
         candidates=candidates,
     )
@@ -100,6 +134,11 @@ def run_offline_evolution(
                 active_skills_artifact_path,
                 staged_artifacts["skills"],
             )
+        next_meta = build_next_harness_meta(
+            current_meta=load_harness_meta(active_harness_meta_artifact_path),
+            source_run_id=run_id,
+        )
+        write_json_artifact(active_harness_meta_artifact_path, next_meta)
 
     return {
         "daily_report_path": write_markdown_report(
@@ -142,8 +181,16 @@ def run_offline_evolution(
             os.path.join(output_dir, "promotion-report.json"),
             promotion_report,
         ),
+        "pass_metrics_path": write_json_artifact(
+            os.path.join(output_dir, "pass-metrics.json"),
+            {
+                "overall": pass_metrics,
+                "by_harness_version": version_summaries,
+            },
+        ),
         "active_contract_artifact_path": active_contract_artifact_path,
         "active_skills_artifact_path": active_skills_artifact_path,
+        "active_harness_meta_artifact_path": active_harness_meta_artifact_path,
     }
 
 
@@ -161,6 +208,7 @@ def main() -> None:
         minimum_support=settings.evolution_minimum_support,
         active_contract_artifact_path=settings.active_contract_artifact_path,
         active_skills_artifact_path=settings.active_skills_artifact_path,
+        active_harness_meta_artifact_path=settings.active_harness_meta_artifact_path,
     )
     print(result)
 
