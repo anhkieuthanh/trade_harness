@@ -21,5 +21,10 @@ def load_trajectory_episodes(path: str) -> list[dict[str, Any]]:
             line = raw_line.strip()
             if not line:
                 continue
-            episodes.append(json.loads(line))
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                episodes.append(payload)
     return episodes

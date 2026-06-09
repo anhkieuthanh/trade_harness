@@ -17,9 +17,15 @@ from tradeharness.control.state import (
     should_run_offline_evolution,
 )
 from tradeharness.evolution.scheduler import main as run_scheduled_evolution
+from tradeharness.runtime.failures import (
+    append_failure_episode,
+    append_runtime_incident,
+    format_exception,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONTROL_STATE_PATH = REPO_ROOT / "var" / "control" / "state.json"
+DEFAULT_RUNTIME_INCIDENT_LOG_PATH = REPO_ROOT / "var" / "runtime" / "incidents.jsonl"
 
 
 def _load_dotenv_file(path: Path = REPO_ROOT / ".env") -> None:
@@ -110,16 +116,62 @@ def maybe_run_scheduled_evolution(
             offline_evolution_enabled=state.offline_evolution_enabled,
             offline_evolution_time=state.offline_evolution_time,
             last_offline_evolution_run_date=current_time.date().isoformat(),
+            strategy=state.strategy,
+            risk=state.risk,
         ),
     )
     return True
 
 
+def _record_supervisor_failure(exc: BaseException, *, phase: str) -> None:
+    error_message = format_exception(exc)
+    incident_path = str(DEFAULT_RUNTIME_INCIDENT_LOG_PATH)
+    try:
+        settings = load_settings()
+    except Exception:
+        settings = None
+
+    if settings is not None:
+        incident_path = settings.runtime_incident_log_path
+        try:
+            append_failure_episode(
+                trajectory_log_path=settings.trajectory_log_path,
+                task_id=settings.task_id,
+                harness_version=settings.harness_version,
+                symbol=settings.symbol,
+                mode="supervisor",
+                phase=phase,
+                error_message=error_message,
+                termination_reason=f"{phase}_exception",
+                final_tag="supervisor_exception",
+            )
+        except Exception:
+            pass
+
+    try:
+        append_runtime_incident(
+            incident_path,
+            component="supervisor",
+            phase=phase,
+            message=error_message,
+        )
+    except Exception:
+        pass
+    print(f"[supervisor] {phase} error: {error_message}", file=sys.stderr)
+
+
 def run_worker(control_state_path: Path, *, sleep_seconds: int = 5) -> None:
     while True:
-        state = load_control_state(control_state_path)
-        maybe_run_live_cycle(state)
-        maybe_run_scheduled_evolution(control_state_path)
+        try:
+            state = load_control_state(control_state_path)
+            maybe_run_live_cycle(state)
+        except Exception as exc:
+            _record_supervisor_failure(exc, phase="live_cycle")
+
+        try:
+            maybe_run_scheduled_evolution(control_state_path)
+        except Exception as exc:
+            _record_supervisor_failure(exc, phase="offline_evolution")
         time.sleep(sleep_seconds)
 
 

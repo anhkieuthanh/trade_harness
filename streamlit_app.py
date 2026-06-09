@@ -385,7 +385,24 @@ def _format_pass_at_1(value: Any) -> str:
         return "—"
 
 
+def _extract_pass_metrics(snapshot: EvolutionSnapshot) -> tuple[Any, Any]:
+    metrics = snapshot.pass_metrics
+    if not isinstance(metrics, dict):
+        return None, None
+
+    overall = metrics.get("overall")
+    if isinstance(overall, dict):
+        pass_block = overall.get("pass_at_1")
+        if isinstance(pass_block, dict):
+            return pass_block.get("pass_at_1"), pass_block.get("total_episodes")
+
+    pass_value = metrics.get("pass_at_1")
+    pass_window = metrics.get("recent_window") or metrics.get("window")
+    return pass_value, pass_window
+
+
 def build_evolution_summary_rows(snapshot: EvolutionSnapshot) -> list[dict[str, str]]:
+    pass_value, pass_window = _extract_pass_metrics(snapshot)
     rows = [
         {
             "label": "Latest promoted version",
@@ -393,11 +410,11 @@ def build_evolution_summary_rows(snapshot: EvolutionSnapshot) -> list[dict[str, 
         },
         {
             "label": "Pass@1",
-            "value": _format_pass_at_1(snapshot.pass_metrics.get("pass_at_1")),
+            "value": _format_pass_at_1(pass_value),
         },
         {
             "label": "Pass window",
-            "value": str(snapshot.pass_metrics.get("recent_window") or snapshot.pass_metrics.get("window") or "—"),
+            "value": str(pass_window or "—"),
         },
         {"label": "Annotations", "value": str(snapshot.annotations_count)},
         {"label": "Candidates", "value": str(snapshot.candidates_count)},
@@ -1035,6 +1052,7 @@ def render_control_panel(
 render_runtime_fragment = st.fragment(render_runtime_fragment, run_every=10)
 render_evolution_fragment = st.fragment(render_evolution_fragment, run_every=30)
 render_control_fragment = st.fragment(render_control_fragment, run_every=15)
+render_debug_fragment = st.fragment(render_debug_fragment)
 
 
 def render_raw_view(state: DashboardState) -> None:

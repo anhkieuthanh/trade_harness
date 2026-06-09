@@ -89,6 +89,8 @@ def run_offline_evolution(
     minimum_support: int = 1,
     active_contract_artifact_path: str = "tradeharness/evolution/artifacts/current/contract.json",
     active_skills_artifact_path: str = "tradeharness/evolution/artifacts/current/skills.json",
+    active_action_rules_artifact_path: str = "tradeharness/evolution/artifacts/current/action_rules.json",
+    active_trajectory_rules_artifact_path: str = "tradeharness/evolution/artifacts/current/trajectory_rules.json",
     active_harness_meta_artifact_path: str = "tradeharness/evolution/artifacts/current/harness_meta.json",
 ) -> dict[str, str]:
     run_id = datetime.now(timezone.utc).isoformat()
@@ -133,6 +135,26 @@ def run_offline_evolution(
             write_json_artifact(
                 active_skills_artifact_path,
                 staged_artifacts["skills"],
+            )
+        if staged_artifacts["action_rules"]["rules"]:
+            write_json_artifact(
+                active_action_rules_artifact_path,
+                staged_artifacts["action_rules"],
+            )
+        elif not os.path.exists(active_action_rules_artifact_path):
+            write_json_artifact(
+                active_action_rules_artifact_path,
+                staged_artifacts["action_rules"],
+            )
+        if staged_artifacts["trajectory_rules"]["rules"]:
+            write_json_artifact(
+                active_trajectory_rules_artifact_path,
+                staged_artifacts["trajectory_rules"],
+            )
+        elif not os.path.exists(active_trajectory_rules_artifact_path):
+            write_json_artifact(
+                active_trajectory_rules_artifact_path,
+                staged_artifacts["trajectory_rules"],
             )
         next_meta = build_next_harness_meta(
             current_meta=load_harness_meta(active_harness_meta_artifact_path),
@@ -190,6 +212,8 @@ def run_offline_evolution(
         ),
         "active_contract_artifact_path": active_contract_artifact_path,
         "active_skills_artifact_path": active_skills_artifact_path,
+        "active_action_rules_artifact_path": active_action_rules_artifact_path,
+        "active_trajectory_rules_artifact_path": active_trajectory_rules_artifact_path,
         "active_harness_meta_artifact_path": active_harness_meta_artifact_path,
     }
 
@@ -208,6 +232,8 @@ def main() -> None:
         minimum_support=settings.evolution_minimum_support,
         active_contract_artifact_path=settings.active_contract_artifact_path,
         active_skills_artifact_path=settings.active_skills_artifact_path,
+        active_action_rules_artifact_path=settings.active_action_rules_artifact_path,
+        active_trajectory_rules_artifact_path=settings.active_trajectory_rules_artifact_path,
         active_harness_meta_artifact_path=settings.active_harness_meta_artifact_path,
     )
     print(result)

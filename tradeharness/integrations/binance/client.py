@@ -11,6 +11,21 @@ import requests
 from tradeharness.domain.models import Candle, Position, SymbolFilters
 
 
+class BinanceAPIError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        message: str,
+        status_code: int | None = None,
+        response_body: str | None = None,
+        url: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.response_body = response_body
+        self.url = url
+        super().__init__(message)
+
+
 class BinanceFuturesTestnetClient:
     def __init__(
         self,
@@ -53,7 +68,24 @@ class BinanceFuturesTestnetClient:
             params=payload,
             timeout=30,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            response_body = ""
+            try:
+                response_body = response.text
+            except Exception:
+                response_body = ""
+            detail = response_body.strip() or str(exc)
+            raise BinanceAPIError(
+                message=(
+                    f"Binance API request failed: {method} {path} "
+                    f"status={response.status_code} detail={detail}"
+                ),
+                status_code=response.status_code,
+                response_body=response_body,
+                url=getattr(response, "url", None),
+            ) from exc
         return response.json()
 
     def get_price(self, symbol: str) -> float:

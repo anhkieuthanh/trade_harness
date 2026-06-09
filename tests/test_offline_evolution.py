@@ -23,6 +23,7 @@ from tradeharness.evolution.schemas import (
     build_update_candidate,
 )
 from tradeharness.evolution.storage.trajectories import append_episode_record
+from tradeharness.evolution.storage.trajectories import load_trajectory_episodes
 from tradeharness.evolution.updater.agent import build_update_candidates
 from tradeharness.evolution.updater.promotion import should_promote_candidate
 from tradeharness.evolution.updater.prompting import build_evolution_system_prompt
@@ -186,6 +187,18 @@ class RuntimeTrajectoryLoggingTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertEqual(json.loads(lines[0])["episode_id"], "episode-1")
 
+    def test_load_trajectory_episodes_skips_malformed_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = os.path.join(temp_dir, "episodes.jsonl")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write('{"episode_id":"episode-1","final_status":"SUCCESS"}\n')
+                handle.write('{"episode_id":"broken"\n')
+                handle.write('{"episode_id":"episode-2","final_status":"FAILED"}\n')
+
+            episodes = load_trajectory_episodes(path)
+
+        self.assertEqual([item["episode_id"] for item in episodes], ["episode-1", "episode-2"])
+
 
 class EvaluatorClientTests(unittest.TestCase):
     def test_build_payload_uses_openai_compatible_shape(self) -> None:
@@ -235,18 +248,21 @@ class PassMetricsTests(unittest.TestCase):
                 "episode_id": "ep-1",
                 "harness_version": "v1",
                 "final_status": "SUCCESS",
+                "termination_reason": "final_response_returned",
                 "started_at": "2026-06-08T00:00:00Z",
             },
             {
                 "episode_id": "ep-2",
                 "harness_version": "v1",
                 "final_status": "SUCCESS",
+                "termination_reason": "risk_guard_hold",
                 "started_at": "2026-06-08T00:01:00Z",
             },
             {
                 "episode_id": "ep-3",
                 "harness_version": "v1",
                 "final_status": "SUCCESS",
+                "termination_reason": "random_flip_cycle_completed",
                 "started_at": "2026-06-08T00:02:00Z",
             },
             {
@@ -260,8 +276,8 @@ class PassMetricsTests(unittest.TestCase):
         summary = summarize_pass_metrics(episodes)
 
         self.assertEqual(summary["pass_at_1"]["total_episodes"], 4)
-        self.assertEqual(summary["pass_at_1"]["passed_episodes"], 3)
-        self.assertAlmostEqual(summary["pass_at_1"]["pass_at_1"], 0.75)
+        self.assertEqual(summary["pass_at_1"]["passed_episodes"], 2)
+        self.assertAlmostEqual(summary["pass_at_1"]["pass_at_1"], 0.5)
 
     def test_summarize_pass_metrics_by_harness_version_groups_versions(self) -> None:
         summary = summarize_pass_metrics_by_harness_version(
@@ -270,18 +286,21 @@ class PassMetricsTests(unittest.TestCase):
                     "episode_id": "ep-1",
                     "harness_version": "v1",
                     "final_status": "SUCCESS",
+                    "termination_reason": "final_response_returned",
                     "started_at": "2026-06-08T00:00:00Z",
                 },
                 {
                     "episode_id": "ep-2",
                     "harness_version": "v1",
-                    "final_status": "FAILED",
+                    "final_status": "SUCCESS",
+                    "termination_reason": "manual_only_hold",
                     "started_at": "2026-06-08T00:01:00Z",
                 },
                 {
                     "episode_id": "ep-3",
                     "harness_version": "v2",
                     "final_status": "SUCCESS",
+                    "termination_reason": "random_flip_cycle_completed",
                     "started_at": "2026-06-08T00:02:00Z",
                 },
             ]
@@ -534,6 +553,16 @@ class OfflineEvolutionMainTests(unittest.TestCase):
                 trajectory_log_path=trajectory_log_path,
                 output_dir=output_dir,
                 evaluator=FakeEvaluator(),
+                active_action_rules_artifact_path=os.path.join(
+                    temp_dir,
+                    "current",
+                    "action_rules.json",
+                ),
+                active_trajectory_rules_artifact_path=os.path.join(
+                    temp_dir,
+                    "current",
+                    "trajectory_rules.json",
+                ),
                 active_harness_meta_artifact_path=os.path.join(
                     temp_dir,
                     "current",
@@ -549,11 +578,17 @@ class OfflineEvolutionMainTests(unittest.TestCase):
             self.assertIn("promotion_report_path", result)
             self.assertIn("pass_metrics_path", result)
             self.assertIn("staged_contract_path", result)
+            self.assertIn("staged_action_rules_path", result)
+            self.assertIn("staged_trajectory_rules_path", result)
             self.assertIn("active_contract_artifact_path", result)
             self.assertIn("active_skills_artifact_path", result)
+            self.assertIn("active_action_rules_artifact_path", result)
+            self.assertIn("active_trajectory_rules_artifact_path", result)
             self.assertIn("active_harness_meta_artifact_path", result)
             self.assertTrue(os.path.exists(result["annotations_path"]))
             self.assertTrue(os.path.exists(result["active_contract_artifact_path"]))
+            self.assertTrue(os.path.exists(result["active_action_rules_artifact_path"]))
+            self.assertTrue(os.path.exists(result["active_trajectory_rules_artifact_path"]))
             self.assertTrue(os.path.exists(result["pass_metrics_path"]))
             self.assertTrue(os.path.exists(result["active_harness_meta_artifact_path"]))
 

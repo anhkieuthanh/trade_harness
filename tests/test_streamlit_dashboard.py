@@ -279,8 +279,12 @@ class StreamlitDashboardLoaderTests(unittest.TestCase):
         snapshot = load_latest_evolution_snapshot(Path("/tmp/does-not-exist"))
         snapshot.daily_report_text = "# Daily report\nEverything looks good."
         snapshot.pass_metrics = {
-            "pass_at_1": 0.75,
-            "recent_window": 20,
+            "overall": {
+                "pass_at_1": {
+                    "pass_at_1": 0.75,
+                    "total_episodes": 20,
+                }
+            },
         }
         snapshot.annotations_count = 3
         snapshot.candidates_count = 4
@@ -305,8 +309,12 @@ class StreamlitDashboardLoaderTests(unittest.TestCase):
     def test_build_evolution_summary_rows_handles_malformed_pass_metric(self) -> None:
         snapshot = load_latest_evolution_snapshot(Path("/tmp/does-not-exist"))
         snapshot.pass_metrics = {
-            "pass_at_1": "not-a-float",
-            "recent_window": 20,
+            "overall": {
+                "pass_at_1": {
+                    "pass_at_1": "not-a-float",
+                    "total_episodes": 20,
+                }
+            },
         }
         snapshot.harness_meta = {"harness_version": "v12"}
 

@@ -55,10 +55,16 @@ def extract_tool_requests(response: dict[str, Any]) -> list[ToolRequest]:
         requests_out: list[ToolRequest] = []
         for tool_call in native_tool_calls:
             function = tool_call["function"]
+            try:
+                arguments = json.loads(function["arguments"])
+            except (KeyError, TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(arguments, dict):
+                continue
             requests_out.append(
                 ToolRequest(
                     name=str(function["name"]),
-                    arguments=json.loads(function["arguments"]),
+                    arguments=arguments,
                     call_id=str(tool_call.get("id")) if tool_call.get("id") else None,
                 )
             )

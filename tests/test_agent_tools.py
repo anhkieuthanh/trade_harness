@@ -4,7 +4,9 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import Mock
 
+from tradeharness.integrations.binance.client import BinanceFuturesTestnetClient, BinanceAPIError
 from tradeharness.tools.binance import BinanceToolset
 from tradeharness.integrations.lmstudio.client import extract_tool_requests
 from tradeharness.runtime.contracts.environment import (
@@ -135,6 +137,31 @@ class ExtractToolRequestsTests(unittest.TestCase):
 
         self.assertEqual(tool_requests, [])
 
+    def test_returns_empty_for_malformed_native_tool_call_arguments(self) -> None:
+        response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_bad",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_market_snapshot",
+                                    "arguments": '{"symbol":"BTCUSDT",',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+
+        tool_requests = extract_tool_requests(response)
+
+        self.assertEqual(tool_requests, [])
+
 
 class BinanceToolsetTests(unittest.TestCase):
     def test_get_market_snapshot_combines_price_and_candles(self) -> None:
@@ -187,6 +214,28 @@ class BinanceToolsetTests(unittest.TestCase):
 
         self.assertIn("Contract:", open_long["function"]["description"])
         self.assertIn("Only use after", open_long["function"]["description"])
+
+
+class BinanceClientTests(unittest.TestCase):
+    def test_request_raises_binance_api_error_with_response_body(self) -> None:
+        client = BinanceFuturesTestnetClient("key", "secret")
+        response = Mock()
+        response.status_code = 400
+        response.text = '{"code":-2022,"msg":"ReduceOnly Order is rejected."}'
+        response.url = "https://testnet.binancefuture.com/fapi/v1/order"
+
+        def raise_http_error() -> None:
+            import requests
+
+            raise requests.HTTPError("400 Client Error", response=response)
+
+        response.raise_for_status.side_effect = raise_http_error
+        client.session.request = Mock(return_value=response)
+
+        with self.assertRaises(BinanceAPIError) as ctx:
+            client.place_market_order("BTCUSDT", "BUY", 0.016, reduce_only=True)
+
+        self.assertIn("ReduceOnly Order is rejected", str(ctx.exception))
 
 
 class EnvironmentContractTests(unittest.TestCase):

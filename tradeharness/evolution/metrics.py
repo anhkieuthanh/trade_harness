@@ -5,7 +5,15 @@ from typing import Any
 
 
 def is_episode_pass(episode: dict[str, Any]) -> bool:
-    return episode.get("final_status") == "SUCCESS"
+    if episode.get("final_status") != "SUCCESS":
+        return False
+    termination_reason = str(episode.get("termination_reason") or "").strip().lower()
+    non_pass_terminations = {
+        "risk_guard_hold",
+        "manual_only_hold",
+        "random_flip_hold",
+    }
+    return termination_reason not in non_pass_terminations
 
 
 def compute_pass_at_1(episodes: list[dict[str, Any]]) -> dict[str, Any]:

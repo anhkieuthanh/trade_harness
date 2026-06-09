@@ -39,6 +39,7 @@ class Settings:
     active_action_rules_artifact_path: str
     active_trajectory_rules_artifact_path: str
     active_harness_meta_artifact_path: str
+    runtime_incident_log_path: str
     harness_version: str
     task_id: str
 
@@ -137,6 +138,10 @@ def load_settings() -> Settings:
             "tradeharness/evolution/artifacts/current/trajectory_rules.json",
         ),
         active_harness_meta_artifact_path=active_harness_meta_artifact_path,
+        runtime_incident_log_path=os.getenv(
+            "RUNTIME_INCIDENT_LOG_PATH",
+            "var/runtime/incidents.jsonl",
+        ),
         harness_version=_load_harness_version(
             meta_path=active_harness_meta_artifact_path,
             fallback=os.getenv("HARNESS_VERSION", "local"),

@@ -178,6 +178,7 @@ class SupervisorTests(unittest.TestCase):
             active_action_rules_artifact_path="tradeharness/evolution/artifacts/current/action_rules.json",
             active_trajectory_rules_artifact_path="tradeharness/evolution/artifacts/current/trajectory_rules.json",
             active_harness_meta_artifact_path="tradeharness/evolution/artifacts/current/harness_meta.json",
+            runtime_incident_log_path="var/runtime/incidents.jsonl",
             harness_version="local",
             task_id="trade:BTCUSDT:1m:5:inspect_then_decide",
         )
@@ -238,6 +239,18 @@ class SupervisorTests(unittest.TestCase):
                 ControlState(
                     offline_evolution_enabled=True,
                     offline_evolution_time="01:00",
+                    strategy=StrategyControlState(
+                        mode="manual_only",
+                        entry_quantity_btc=0.01,
+                        hold_seconds=300,
+                        cooldown_seconds=45,
+                    ),
+                    risk=RiskControlState(
+                        max_daily_loss_usdt=25.0,
+                        max_open_positions=2,
+                        loss_cooldown_seconds=900,
+                        hard_stop_candle_range_pct=1.5,
+                    ),
                 ),
             )
             scheduler_main = Mock()
@@ -253,6 +266,10 @@ class SupervisorTests(unittest.TestCase):
         self.assertTrue(did_run)
         scheduler_main.assert_called_once_with()
         self.assertEqual(loaded.last_offline_evolution_run_date, "2026-06-09")
+        self.assertEqual(loaded.strategy.mode, "manual_only")
+        self.assertEqual(loaded.strategy.entry_quantity_btc, 0.01)
+        self.assertEqual(loaded.risk.max_daily_loss_usdt, 25.0)
+        self.assertEqual(loaded.risk.max_open_positions, 2)
 
     def test_maybe_run_scheduled_evolution_skips_before_time(self) -> None:
         with TemporaryDirectory() as temp_dir_name:
@@ -275,6 +292,29 @@ class SupervisorTests(unittest.TestCase):
 
         self.assertFalse(did_run)
         scheduler_main.assert_not_called()
+
+    def test_run_worker_records_and_survives_live_cycle_exception(self) -> None:
+        from tradeharness.supervisor import run_worker
+
+        with TemporaryDirectory() as temp_dir_name:
+            path = Path(temp_dir_name) / "state.json"
+            save_control_state(path, ControlState(live_enabled=True))
+
+            def stop_after_one_cycle(_seconds: int) -> None:
+                raise KeyboardInterrupt()
+
+            with (
+                patch("tradeharness.supervisor.load_control_state", return_value=ControlState(live_enabled=True)),
+                patch("tradeharness.supervisor.maybe_run_live_cycle", side_effect=RuntimeError("boom")),
+                patch("tradeharness.supervisor.maybe_run_scheduled_evolution"),
+                patch("tradeharness.supervisor._record_supervisor_failure") as mock_record_failure,
+                patch("tradeharness.supervisor.time.sleep", side_effect=stop_after_one_cycle),
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    run_worker(path, sleep_seconds=0)
+
+        mock_record_failure.assert_called_once()
+        self.assertEqual(mock_record_failure.call_args.kwargs["phase"], "live_cycle")
 
 
 if __name__ == "__main__":
