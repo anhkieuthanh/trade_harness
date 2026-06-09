@@ -88,6 +88,7 @@ Additional evolution settings:
 - `ACTIVE_ACTION_RULES_ARTIFACT_PATH`
 - `ACTIVE_TRAJECTORY_RULES_ARTIFACT_PATH`
 - `ACTIVE_HARNESS_META_ARTIFACT_PATH`
+- `CONTROL_STATE_PATH`
 
 Pass metrics settings:
 
@@ -128,7 +129,21 @@ LM Studio defaults:
 
 ## Run
 
-Dry run:
+All-in-one local server, UI, and scheduler:
+
+```bash
+cd /Users/atif/Public/TradeHarness
+python3 -m tradeharness.supervisor
+```
+
+This starts:
+
+- the Streamlit operator UI on `http://localhost:8501`
+- a background supervisor loop
+- the live agent loop when it is enabled from the UI
+- the offline evolution schedule configured from the UI
+
+Manual single-cycle dry run:
 
 ```bash
 cd /Users/atif/Public/TradeHarness
@@ -137,7 +152,24 @@ python3 -m tradeharness.main
 
 Real demo order mode:
 
-Set `DRY_RUN=false` in `.env`, then run the same command.
+Set `DRY_RUN=false` in `.env`, run `python3 -m tradeharness.supervisor`, then enable the live loop from the UI.
+
+Default live strategy:
+
+- `TRADE_STRATEGY_MODE=random_flip`
+- opens a random `LONG` or `SHORT` when flat
+- uses fixed size `TRADE_ENTRY_QUANTITY_BTC=0.008`
+- closes the position after `TRADE_HOLD_SECONDS=120`
+- optional cooldown before the next entry: `TRADE_COOLDOWN_SECONDS`
+- persists its timer state in `TRADE_STRATEGY_STATE_PATH`
+
+Live risk guard:
+
+- `TRADE_RISK_MAX_DAILY_LOSS_USDT`
+- `TRADE_RISK_MAX_OPEN_POSITIONS`
+- `TRADE_RISK_LOSS_COOLDOWN_SECONDS`
+- `TRADE_RISK_HARD_STOP_CANDLE_RANGE_PCT`
+- runtime risk state is stored in `TRADE_RISK_STATE_PATH`
 
 Offline evolution batch:
 
@@ -178,6 +210,36 @@ Layer 3 and Layer 4 can also rehydrate active deterministic artifacts when prese
 
 - `tradeharness/evolution/artifacts/current/action_rules.json`
 - `tradeharness/evolution/artifacts/current/trajectory_rules.json`
+
+## Streamlit Monitor
+
+The preferred way to run the local operator console is through the supervisor:
+
+```bash
+cd /Users/atif/Public/TradeHarness
+python3 -m tradeharness.supervisor
+```
+
+The page shows runtime health, recent episodes, evolution artifacts, and safe operator controls.
+Each data section refreshes independently, so changing one source does not force a full-page refresh.
+
+The UI can:
+
+- enable or disable the live agent loop
+- enable or disable scheduled offline evolution
+- set the daily offline evolution time
+- trigger offline evolution manually
+
+The control state is stored at `CONTROL_STATE_PATH`, defaulting to:
+
+- `var/control/state.json`
+
+For UI-only debugging, you can still run:
+
+```bash
+cd /Users/atif/Public/TradeHarness
+streamlit run streamlit_app.py
+```
 
 ## Pass Metrics
 

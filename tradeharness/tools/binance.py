@@ -30,10 +30,12 @@ class BinanceToolset:
         self,
         client: BinanceFuturesTestnetClient,
         trade_size_percent: float,
+        fixed_entry_quantity: float | None = None,
         dry_run: bool = False,
     ) -> None:
         self.client = client
         self.trade_size_percent = trade_size_percent
+        self.fixed_entry_quantity = fixed_entry_quantity
         self.dry_run = dry_run
 
     def definitions(self) -> list[dict[str, Any]]:
@@ -190,16 +192,23 @@ class BinanceToolset:
         }
 
     def _open_directional_position(self, symbol: str, side: str) -> dict[str, Any]:
-        balance = self.client.get_available_balance("USDT")
         price = self.client.get_price(symbol)
         filters = self.client.get_symbol_filters(symbol)
-        quantity = calculate_order_quantity(
-            balance,
-            self.trade_size_percent,
-            price,
-            filters.step_size,
-            filters.min_qty,
-        )
+        if self.fixed_entry_quantity is None:
+            balance = self.client.get_available_balance("USDT")
+            quantity = calculate_order_quantity(
+                balance,
+                self.trade_size_percent,
+                price,
+                filters.step_size,
+                filters.min_qty,
+            )
+        else:
+            quantity = self._normalize_quantity(
+                self.fixed_entry_quantity,
+                step_size=filters.step_size,
+                min_qty=filters.min_qty,
+            )
         if self.dry_run:
             return {
                 "status": "dry_run",
@@ -215,6 +224,23 @@ class BinanceToolset:
             "quantity": quantity,
             "exchange_response": result,
         }
+
+    def _normalize_quantity(
+        self,
+        quantity: float,
+        *,
+        step_size: float,
+        min_qty: float,
+    ) -> float:
+        precision = 0
+        if step_size < 1:
+            step_text = f"{step_size:.12f}".rstrip("0")
+            precision = len(step_text.split(".")[1]) if "." in step_text else 0
+        scaled = int(quantity / step_size) * step_size
+        normalized = round(scaled, precision)
+        if normalized < min_qty:
+            raise ValueError("Configured entry quantity is below exchange minimum.")
+        return normalized
 
     def _close_position(self, symbol: str) -> dict[str, Any]:
         position = self.client.get_position(symbol)

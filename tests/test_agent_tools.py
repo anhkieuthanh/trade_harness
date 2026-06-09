@@ -157,6 +157,18 @@ class BinanceToolsetTests(unittest.TestCase):
         self.assertEqual(result["side"], "BUY")
         self.assertAlmostEqual(result["quantity"], 0.001, places=6)
 
+    def test_open_long_uses_fixed_quantity_when_configured(self) -> None:
+        toolset = BinanceToolset(
+            FakeBinanceClient(),
+            trade_size_percent=10.0,
+            fixed_entry_quantity=0.008,
+        )
+
+        result = toolset.run_tool("open_long", {"symbol": "BTCUSDT"})
+
+        self.assertEqual(result["side"], "BUY")
+        self.assertAlmostEqual(result["quantity"], 0.008, places=6)
+
     def test_get_balance_normalizes_symbol_like_asset_to_usdt(self) -> None:
         toolset = BinanceToolset(FakeBinanceClient(), trade_size_percent=10.0)
 

@@ -16,6 +16,16 @@ class Settings:
     candle_interval: str
     candle_limit: int
     trade_size_percent: float
+    trade_strategy_mode: str
+    trade_entry_quantity_btc: float
+    trade_hold_seconds: int
+    trade_cooldown_seconds: int
+    trade_strategy_state_path: str
+    trade_risk_max_daily_loss_usdt: float
+    trade_risk_max_open_positions: int
+    trade_risk_loss_cooldown_seconds: int
+    trade_risk_hard_stop_candle_range_pct: float
+    trade_risk_state_path: str
     dry_run: bool
     evaluator_base_url: str
     evaluator_api_key: str
@@ -81,6 +91,24 @@ def load_settings() -> Settings:
         candle_interval=candle_interval,
         candle_limit=candle_limit,
         trade_size_percent=float(os.getenv("TRADE_SIZE_PERCENT", "10")),
+        trade_strategy_mode=os.getenv("TRADE_STRATEGY_MODE", "random_flip"),
+        trade_entry_quantity_btc=float(os.getenv("TRADE_ENTRY_QUANTITY_BTC", "0.008")),
+        trade_hold_seconds=int(os.getenv("TRADE_HOLD_SECONDS", "120")),
+        trade_cooldown_seconds=int(os.getenv("TRADE_COOLDOWN_SECONDS", "0")),
+        trade_strategy_state_path=os.getenv(
+            "TRADE_STRATEGY_STATE_PATH",
+            "var/control/trade_strategy_state.json",
+        ),
+        trade_risk_max_daily_loss_usdt=float(os.getenv("TRADE_RISK_MAX_DAILY_LOSS_USDT", "50")),
+        trade_risk_max_open_positions=int(os.getenv("TRADE_RISK_MAX_OPEN_POSITIONS", "1")),
+        trade_risk_loss_cooldown_seconds=int(os.getenv("TRADE_RISK_LOSS_COOLDOWN_SECONDS", "1800")),
+        trade_risk_hard_stop_candle_range_pct=float(
+            os.getenv("TRADE_RISK_HARD_STOP_CANDLE_RANGE_PCT", "2.0")
+        ),
+        trade_risk_state_path=os.getenv(
+            "TRADE_RISK_STATE_PATH",
+            "var/control/risk_state.json",
+        ),
         dry_run=_parse_bool(os.getenv("DRY_RUN", "true")),
         evaluator_base_url=os.getenv("EVALUATOR_BASE_URL", "https://example.invalid/v1"),
         evaluator_api_key=os.getenv("EVALUATOR_API_KEY", ""),
