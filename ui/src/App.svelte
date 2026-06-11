@@ -266,7 +266,7 @@
   .header-left, .header-right {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1rem;
   }
 
   .brand {
@@ -290,9 +290,7 @@
     font-size: 1.125rem;
     font-weight: 800;
     letter-spacing: -0.02em;
-    background: linear-gradient(135deg, #ffffff 50%, var(--text-secondary));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-primary);
   }
 
   .nav-tabs {
@@ -300,12 +298,12 @@
     height: 100%;
     align-items: center;
     border-left: 1px solid var(--border-color);
-    padding-left: 1.5rem;
-    gap: 0.5rem;
+    padding-left: 1rem;
+    gap: 0.375rem;
   }
 
   .nav-tab {
-    padding: 0.5rem 1rem;
+    padding: 0.375rem 0.75rem;
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-secondary);
@@ -315,7 +313,7 @@
 
   .nav-tab:hover {
     color: var(--text-primary);
-    background-color: var(--bg-panel);
+    background-color: var(--bg-panel-hover);
   }
 
   .nav-tab.active {
@@ -327,19 +325,20 @@
   .quick-stats {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex-wrap: nowrap;
   }
 
   .stat-bubble {
     background-color: var(--bg-panel);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    padding: 0.25rem 0.625rem;
+    padding: 0.25rem 0.5rem;
     font-size: 0.75rem;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.25rem;
+    white-space: nowrap;
   }
 
   .stat-bubble .label {
