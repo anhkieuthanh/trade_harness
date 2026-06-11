@@ -83,22 +83,6 @@
       <p>Choose an episode from the runs log sidebar to display its execution details.</p>
     </div>
   {:else}
-    <div class="visualizer-header animate-fade">
-      <div class="ep-info">
-        <div class="title-row">
-          <h1>Run Summary: <span class="highlight font-mono">{episode.episode_id.substring(0, 16)}...</span></h1>
-          <span class="badge {episode.final_status === 'SUCCESS' ? 'badge-success' : 'badge-danger'}">
-            {episode.final_status}
-          </span>
-        </div>
-        <p class="subtitle font-mono">
-          Task: {episode.task_id} · 
-          Version: {episode.harness_version} ·
-          Time: {formatTime(episode.started_at)} - {formatTime(episode.ended_at)}
-        </p>
-      </div>
-    </div>
-
     <div class="summary-cards-container animate-fade">
       <!-- High Level Verdict Card -->
       <div class="outcome-card">
@@ -373,36 +357,10 @@
     margin: 0 auto;
   }
 
-  .visualizer-header {
-    padding: 2.25rem 2rem 1rem;
-    border-bottom: none;
-    background: transparent;
-  }
 
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .visualizer-header h1 {
-    font-size: 1.375rem;
-    font-weight: 700;
-  }
-
-  .highlight {
-    color: var(--color-primary);
-  }
-
-  .subtitle {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    margin-top: 0.25rem;
-  }
 
   .summary-cards-container {
-    padding: 0 2rem 2rem;
+    padding: 2rem;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
