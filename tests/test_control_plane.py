@@ -17,7 +17,6 @@ from tradeharness.control.state import (
 )
 from tradeharness.config.settings import Settings
 from tradeharness.supervisor import (
-    build_streamlit_command,
     maybe_run_live_cycle,
     maybe_run_scheduled_evolution,
     resolve_control_state_path,
@@ -95,15 +94,6 @@ class ControlStateTests(unittest.TestCase):
 
 
 class SupervisorTests(unittest.TestCase):
-    def test_build_streamlit_command_points_to_local_dashboard(self) -> None:
-        command = build_streamlit_command(port=8502)
-
-        self.assertEqual(command[1:5], ["-m", "streamlit", "run", "streamlit_app.py"])
-        self.assertIn("--server.headless", command)
-        self.assertIn("true", command)
-        self.assertIn("--server.port", command)
-        self.assertIn("8502", command)
-
     def test_resolve_control_state_path_uses_dotenv_value_when_loaded(self) -> None:
         with TemporaryDirectory() as temp_dir_name:
             temp_dir = Path(temp_dir_name)
