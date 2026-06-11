@@ -181,6 +181,18 @@ def main() -> None:
     if not control_state_path.exists():
         save_control_state(control_state_path, ControlState())
 
+    # Start Svelte UI server in background thread
+    try:
+        import threading
+        from tradeharness.ui_server import run_server as run_ui_server
+        ui_port = int(os.getenv("UI_PORT", "8080"))
+        ui_thread = threading.Thread(target=run_ui_server, args=(ui_port,), daemon=True)
+        ui_thread.start()
+        print(f"[supervisor] Svelte UI server started on port {ui_port}")
+    except Exception as e:
+        import sys
+        print(f"[supervisor] failed to start Svelte UI server: {e}", file=sys.stderr)
+
     streamlit_port = int(os.getenv("STREAMLIT_PORT", "8501"))
     streamlit_process = subprocess.Popen(  # noqa: S603
         build_streamlit_command(port=streamlit_port),
