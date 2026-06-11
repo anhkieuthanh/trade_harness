@@ -6,3 +6,4 @@ var/
 tradeharness/evolution/artifacts/current/*.json
 tradeharness/evolution/artifacts/current/*.json
 .codegraph
+docs
