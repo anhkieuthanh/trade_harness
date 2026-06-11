@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from tradeharness.runtime.strategies.random_flip import (
+from tradeharness.runtime.strategies.rsi_strategy import (
     ManualOnlyStrategy,
-    RandomFlipPlan,
-    RandomFlipState,
-    RandomFlipStrategy,
+    RSIPlan,
+    RSIState,
+    RSIStrategy,
     get_trade_strategy,
 )
 
 __all__ = [
-    "RandomFlipPlan",
-    "RandomFlipState",
-    "RandomFlipStrategy",
+    "RSIPlan",
+    "RSIState",
+    "RSIStrategy",
     "ManualOnlyStrategy",
     "get_trade_strategy",
 ]

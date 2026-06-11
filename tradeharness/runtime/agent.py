@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,7 +34,7 @@ from tradeharness.runtime.risk import (
     save_live_risk_state,
 )
 from tradeharness.runtime.trajectory_regulation.monitor import regulate_trajectory
-from tradeharness.runtime.strategies import RandomFlipState, get_trade_strategy
+from tradeharness.runtime.strategies import RSIState, get_trade_strategy
 from tradeharness.tools.binance import BinanceToolset
 
 BASE_SYSTEM_PROMPT = """You are a BTCUSDT Binance Futures Testnet trading agent.
@@ -145,19 +144,19 @@ def build_episode_termination_record(
     )
 
 
-def _format_random_flip_summary(action: str, quantity: float, hold_seconds: int) -> str:
+def _format_strategy_summary(action: str, quantity: float, hold_seconds: int, strategy_name: str) -> str:
     if action == "close_position":
         return (
-            f"Random flip strategy closed the position after {hold_seconds} seconds."
+            f"{strategy_name} strategy closed the position after {hold_seconds} seconds."
         )
     side = "LONG" if action == "open_long" else "SHORT"
     return (
-        f"Random flip strategy opened {side} with fixed size {quantity:.3f} BTC. "
+        f"{strategy_name} strategy opened {side} with fixed size {quantity:.3f} BTC. "
         f"Hold for {hold_seconds} seconds before closing."
     )
 
 
-def _run_random_flip_cycle(
+def _run_programmatic_strategy_cycle(
     *,
     settings: Settings,
     toolset: BinanceToolset,
@@ -176,7 +175,7 @@ def _run_random_flip_cycle(
     now = datetime.now(timezone.utc)
 
     if current_position_state.get("is_open") and strategy_state.opened_at is None:
-        strategy_state = RandomFlipState(
+        strategy_state = RSIState(
             opened_at=now.isoformat(),
             side=str(current_position_state.get("side", "")) or None,
             quantity=abs(float(current_position_state.get("quantity", 0.0))) or None,
@@ -189,7 +188,7 @@ def _run_random_flip_cycle(
         now=now,
         hold_seconds=settings.trade_hold_seconds,
         cooldown_seconds=settings.trade_cooldown_seconds,
-        choose_side=lambda: random.choice(["open_long", "open_short"]),
+        market_snapshot=initial_market_snapshot,
     )
 
     episode_steps: list[dict[str, Any]] = []
@@ -303,7 +302,7 @@ def _run_random_flip_cycle(
             hold_label = (
                 "manual_only_hold"
                 if settings.trade_strategy_mode == "manual_only"
-                else "random_flip_hold"
+                else f"{trade_strategy.name}_hold"
             )
             hold_reason = plan.reason
             hold_intervention = {"decision": "ALLOW", "layer": "strategy"}
@@ -357,7 +356,7 @@ def _run_random_flip_cycle(
     if gate_result["decision"] == "BLOCK":
         summary = json.dumps(
             {
-                "final": "random_flip_blocked",
+                "final": f"{trade_strategy.name}_blocked",
                 "reason": gate_result["reason"],
             }
         )
@@ -394,7 +393,7 @@ def _run_random_flip_cycle(
         )
         finalize_episode(
             final_status="FAILED",
-            termination_reason="random_flip_blocked_by_gate",
+            termination_reason=f"{trade_strategy.name}_blocked_by_gate",
             final_outcome={"final": summary},
             steps=episode_steps,
         )
@@ -451,11 +450,12 @@ def _run_random_flip_cycle(
     if plan.action in {"open_long", "open_short"}:
         trade_strategy.save_state(
             strategy_state_path,
-            RandomFlipState(
+            RSIState(
                 opened_at=now.isoformat(),
                 side="LONG" if plan.action == "open_long" else "SHORT",
                 quantity=settings.trade_entry_quantity_btc,
                 last_closed_at=strategy_state.last_closed_at,
+                entry_rsi=trade_strategy.calculate_rsi(initial_market_snapshot.get("candles", [])),
             ),
         )
     elif plan.action == "close_position":
@@ -468,15 +468,16 @@ def _run_random_flip_cycle(
         save_live_risk_state(risk_state_path, risk_state)
         trade_strategy.save_state(
             strategy_state_path,
-            RandomFlipState(last_closed_at=now.isoformat()),
+            RSIState(last_closed_at=now.isoformat()),
         )
 
     summary = json.dumps(
         {
-            "final": _format_random_flip_summary(
+            "final": _format_strategy_summary(
                 plan.action,
                 settings.trade_entry_quantity_btc,
                 settings.trade_hold_seconds,
+                trade_strategy.name,
             ),
             "tool_result": tool_result,
         }
@@ -521,7 +522,7 @@ def _run_random_flip_cycle(
     )
     finalize_episode(
         final_status="SUCCESS",
-        termination_reason="random_flip_cycle_completed",
+        termination_reason=f"{trade_strategy.name}_cycle_completed",
         final_outcome={"final": summary},
         steps=episode_steps,
     )
@@ -582,8 +583,8 @@ def run_agent_cycle(settings: Settings) -> None:
             {"symbol": settings.symbol},
         )
 
-        if settings.trade_strategy_mode in {"random_flip", "manual_only"}:
-            _run_random_flip_cycle(
+        if settings.trade_strategy_mode in {"rsi_strategy", "manual_only"}:
+            _run_programmatic_strategy_cycle(
                 settings=settings,
                 toolset=toolset,
                 initial_market_snapshot=initial_market_snapshot,
