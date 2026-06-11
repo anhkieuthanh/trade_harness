@@ -83,7 +83,7 @@
     {/if}
 
     <div class="form-container">
-      <div class="form-row flex-row">
+      <div class="toggle-row">
         <label class="toggle-container">
           <input type="checkbox" bind:checked={controlState.live_enabled} />
           <span class="toggle-slider"></span>
@@ -306,13 +306,7 @@
     gap: 1rem;
   }
 
-  .flex-row {
-    display: flex;
-    flex-direction: row;
-    gap: 1.5rem;
-    flex-wrap: wrap;
-    align-items: center;
-  }
+
 
   .grid-2 {
     display: grid;
@@ -367,6 +361,14 @@
     color: var(--text-muted);
   }
 
+  .toggle-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-start;
+    margin-bottom: 0.25rem;
+  }
+
   .toggle-container {
     display: flex;
     align-items: center;
@@ -403,13 +405,13 @@
   }
 
   .toggle-container input:checked + .toggle-slider {
-    background-color: var(--color-primary-light);
+    background-color: var(--color-primary);
     border-color: var(--color-primary);
   }
 
   .toggle-container input:checked + .toggle-slider::after {
     transform: translateX(16px);
-    background-color: var(--color-primary);
+    background-color: #ffffff;
   }
 
   .btn-save {
