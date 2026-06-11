@@ -47,9 +47,9 @@
     }
   }
 
-  async function fetchEpisodeDetail(id) {
+  async function fetchEpisodeDetail(id, showSpinner = true) {
     if (!id) return;
-    isLoadingDetail = true;
+    if (showSpinner) isLoadingDetail = true;
     try {
       const res = await fetch(`${API_BASE}/api/episodes/${id}`);
       if (res.ok) {
@@ -58,7 +58,7 @@
     } catch (err) {
       console.error(`Failed to fetch episode details for ${id}:`, err);
     } finally {
-      isLoadingDetail = false;
+      if (showSpinner) isLoadingDetail = false;
     }
   }
 
@@ -136,7 +136,7 @@
     pollInterval = setInterval(() => {
       fetchEpisodes(false);
       if (selectedEpisodeId && activeTab === "visualizer") {
-        fetchEpisodeDetail(selectedEpisodeId);
+        fetchEpisodeDetail(selectedEpisodeId, false);
       }
     }, 5000);
   });
@@ -212,8 +212,8 @@
           {#if isRefreshing}
             <div class="spinner-mini"></div>
           {:else}
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.22 8H18" />
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
             </svg>
           {/if}
           Refresh

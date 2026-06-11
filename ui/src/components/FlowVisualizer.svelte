@@ -374,9 +374,9 @@
   }
 
   .visualizer-header {
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-    background-color: var(--bg-sidebar);
+    padding: 2.25rem 2rem 1rem;
+    border-bottom: none;
+    background: transparent;
   }
 
   .title-row {
@@ -387,7 +387,7 @@
   }
 
   .visualizer-header h1 {
-    font-size: 1.25rem;
+    font-size: 1.375rem;
     font-weight: 700;
   }
 
@@ -402,7 +402,7 @@
   }
 
   .summary-cards-container {
-    padding: 1.5rem;
+    padding: 0 2rem 2rem;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
