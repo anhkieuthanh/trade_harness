@@ -2,11 +2,19 @@
   import CandleChart from "./CandleChart.svelte";
 
   export let episode = null;
+  export let episodes = [];
+  export let evolutionStatus = null;
+  export let onTriggerEvolution = null;
 
   let showDetailedTrace = false;
   let expandedThoughts = {};
   let expandedLogs = {};
   let selectedStepIdx = 0;
+
+  let zoomLevel = 1.0;
+  function changeZoom(delta) {
+    zoomLevel = Math.max(0.5, Math.min(1.5, parseFloat((zoomLevel + delta).toFixed(2))));
+  }
 
   $: if (episode) {
     selectedStepIdx = 0;
@@ -130,18 +138,189 @@
             </div>
           </div>
 
-          <div class="flow-canvas-wrapper">
-            <div class="flow-canvas">
-              
-              <!-- Column 1: Input State -->
-              <div class="flow-col">
-                <div class="flow-node-card node-input">
-                  <div class="node-port port-right"></div>
+          <div class="flow-container-rel">
+            <!-- Floating Zoom Controls -->
+            <div class="zoom-controls">
+              <button class="zoom-btn" on:click={() => changeZoom(-0.1)} title="Zoom Out">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" />
+                </svg>
+              </button>
+              <span class="zoom-text font-mono">{Math.round(zoomLevel * 100)}%</span>
+              <button class="zoom-btn" on:click={() => changeZoom(0.1)} title="Zoom In">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+              <button class="zoom-btn reset" on:click={() => zoomLevel = 1.0} title="Reset Zoom">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3-3 3 3" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="flow-canvas-wrapper">
+              <div class="flow-canvas" style="--zoom: {zoomLevel};">
+                <div class="flow-board">
+                  
+                  <!-- Connection Edges (SVG overlay) -->
+                  <svg class="flow-edges-svg" width="1240" height="680">
+                    <defs>
+                      <marker id="arrow-active" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--color-primary)" />
+                      </marker>
+                      <marker id="arrow-inactive" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--border-color)" />
+                      </marker>
+                      <marker id="arrow-blocked" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="var(--color-danger)" />
+                      </marker>
+                    </defs>
+
+                    <!-- Evolution -> Initialization Links -->
+                    <path d="M 270 290 C 285 290, 285 155, 300 155" class="path-flow-active" />
+                    <path d="M 270 290 C 285 290, 285 425, 300 425" class="path-flow-active" />
+
+                    <!-- Initialization -> Observation Links -->
+                    <path d="M 550 155 L 580 155" class="path-flow-active" marker-end="url(#arrow-active)" />
+                    <path d="M 550 425 C 565 425, 565 155, 580 155" class="path-flow-active" marker-end="url(#arrow-active)" />
+
+                    <!-- Step Loop Links -->
+                    <!-- Edge 1: Observation -> LLM -->
+                    <path d="M 850 120 L 910 120" class="path-flow-active" marker-end="url(#arrow-active)" />
+
+                    <!-- Edge 2: LLM -> Action -->
+                    <path d="M 1045 200 L 1045 220" class="path-flow-active" marker-end="url(#arrow-active)" />
+
+                    <!-- Edge 3: Action -> Safety Shield -->
+                    <path d="M 1045 360 L 1045 380" class="path-flow-active" marker-end="url(#arrow-active)" />
+
+                    <!-- Edge 4: Safety Shield -> Execution Outcome (if allowed) -->
+                    {#if isRiskBlock || isGateBlock || isTrajStop}
+                      <path d="M 910 475 C 880 475, 880 420, 850 420" class="path-flow-inactive" marker-end="url(#arrow-inactive)" />
+                    {:else}
+                      <path d="M 910 475 C 880 475, 880 420, 850 420" class="path-flow-active" marker-end="url(#arrow-active)" />
+                    {/if}
+
+                    <!-- Edge 5: Safety Shield -> Feedback back to LLM (if blocked) -->
+                    {#if isRiskBlock || isGateBlock || isTrajStop}
+                      <path d="M 1180 475 C 1220 475, 1220 120, 1180 120" class="path-flow-blocked" marker-end="url(#arrow-blocked)" />
+                    {/if}
+
+                    <!-- Edge 6: Execution Outcome -> Observation loop back -->
+                    {#if isRiskBlock || isGateBlock || isTrajStop}
+                      <path d="M 715 300 L 715 270" class="path-flow-inactive" marker-end="url(#arrow-inactive)" />
+                    {:else}
+                      <path d="M 715 300 L 715 270" class="path-flow-active" marker-end="url(#arrow-active)" />
+                    {/if}
+                  </svg>
+
+                <!-- Column 1: Harness Evolution (Offline) -->
+                <div class="flow-node-card node-evo">
+                  <div class="node-port port-right" style="top: 50%;"></div>
                   <div class="node-header">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                     </svg>
-                    <h4>Input State</h4>
+                    <h4>Harness Evolution (Offline)</h4>
+                  </div>
+                  <div class="node-body flex-col gap-sm">
+                    <!-- Section 1: Training Trajectories -->
+                    <div class="sub-panel">
+                      <div class="card-tag">Training Trajectories</div>
+                      <div class="flex-col font-mono text-xs">
+                        <div>Total Episodes: <span class="highlight-mini">{episodes.length}</span></div>
+                        <div>Success Runs: <span class="val success-text">{episodes.filter(e => e.final_status === 'SUCCESS').length}</span></div>
+                      </div>
+                    </div>
+
+                    <!-- Section 2: Pattern Mining & Analysis -->
+                    <div class="sub-panel">
+                      <div class="card-tag">Failure Pattern Mining</div>
+                      <div class="flex-col font-mono text-xs">
+                        <div>Failed Runs: <span class="val error-text">{episodes.filter(e => e.final_status === 'FAILED' || e.final_status === 'ERROR').length}</span></div>
+                        {#if evolutionStatus}
+                          <div>Evo Status: <span class="val highlight-mini">{evolutionStatus.run_status?.status ? evolutionStatus.run_status.status.toUpperCase() : 'IDLE'}</span></div>
+                          {#if evolutionStatus.run_status?.last_run}
+                            <div class="text-muted text-xxs mt-xs">Last: {new Date(evolutionStatus.run_status.last_run).toLocaleDateString()}</div>
+                          {/if}
+                        {/if}
+                      </div>
+                    </div>
+
+                    <!-- Section 3: Harness Updates -->
+                    <div class="sub-panel">
+                      <div class="card-tag">Harness Updates</div>
+                      <button 
+                        class="btn btn-primary btn-sm w-full mt-xs" 
+                        on:click={onTriggerEvolution}
+                        disabled={evolutionStatus?.run_status?.status === 'running'}
+                      >
+                        {#if evolutionStatus?.run_status?.status === 'running'}
+                          Running...
+                        {:else}
+                          Trigger Evolution Run
+                        {/if}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Column 2: Initialization -->
+                <!-- Environment Contract Layer -->
+                <div class="flow-node-card node-contract">
+                  <div class="node-port port-left" style="top: 50%;"></div>
+                  <div class="node-port port-right" style="top: 50%;"></div>
+                  <div class="node-header">
+                    <span class="badge badge-primary font-mono mr-xs">1</span>
+                    <h4>Env Contract Layer</h4>
+                  </div>
+                  <div class="node-body">
+                    <div class="card-tag">Tool & Interface Constraints</div>
+                    <div class="flex-col gap-xs font-mono text-xs mt-xs">
+                      <div class="state-indicator"><span class="label">Symbol:</span> <span class="val font-bold">{episode?.symbol || 'BTCUSDT'}</span></div>
+                      <div class="divider-line">Calibrated Tools</div>
+                      <div class="tool-list flex-row gap-xs mt-xs" style="flex-wrap: wrap;">
+                        <span class="action-tag text-xxs">submit_order</span>
+                        <span class="action-tag text-xxs">cancel_order</span>
+                        <span class="action-tag text-xxs">final_response</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Procedural Skill Layer -->
+                <div class="flow-node-card node-skills-layer">
+                  <div class="node-port port-left" style="top: 50%;"></div>
+                  <div class="node-port port-right" style="top: 50%;"></div>
+                  <div class="node-header">
+                    <span class="badge badge-primary font-mono mr-xs">2</span>
+                    <h4>Procedural Skill Layer</h4>
+                  </div>
+                  <div class="node-body">
+                    <div class="card-tag">Retrieved Skills & State Alignment</div>
+                    <div class="flex-col gap-xs mt-xs">
+                      <ul class="skills-list font-mono text-xs">
+                        <li>• Daily Risk check alignment</li>
+                        <li>• Binance API safety alignment</li>
+                        <li>• Trajectory repetition checks</li>
+                        <li>• Historical regression checks</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Column 3: Per-step Interaction (Vòng lặp) -->
+                <!-- Node 3.1: Observation (Input State) -->
+                <div class="flow-node-card node-input">
+                  <div class="node-port port-left" style="top: 50%;"></div>
+                  <div class="node-port port-right" style="top: 50%;"></div>
+                  <div class="node-header">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    <h4>Observation</h4>
                   </div>
                   <div class="node-body">
                     {#if marketSnapshot}
@@ -163,26 +342,17 @@
                     {/if}
                   </div>
                 </div>
-              </div>
 
-              <!-- Arrow 1-2 -->
-              <div class="arrow-container horizontal">
-                <svg width="40" height="20" viewBox="0 0 40 20" fill="none" class="flow-arrow">
-                  <path d="M0 10 H36 M30 5 L36 10 L30 15" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </div>
-
-              <!-- Column 2: Decision & Safety -->
-              <div class="flow-col">
-                <!-- Node 2: Agent Brain -->
+                <!-- Node 3.2: LLM Decision -->
                 <div class="flow-node-card node-brain">
-                  <div class="node-port port-left"></div>
-                  <div class="node-port port-bottom"></div>
+                  <div class="node-port port-left" style="top: 50%;"></div>
+                  <div class="node-port port-bottom" style="left: 50%;"></div>
+                  <div class="node-port port-right" style="top: 50%;"></div>
                   <div class="node-header">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                     </svg>
-                    <h4>Agent Decision</h4>
+                    <h4>LLM Decision (Frozen)</h4>
                   </div>
                   <div class="node-body">
                     <p class="thought-summary-mini">
@@ -197,71 +367,15 @@
                   </div>
                 </div>
 
-                <!-- Arrow 2-3 -->
-                <div class="arrow-container vertical">
-                  <svg width="20" height="30" viewBox="0 0 20 30" fill="none" class="flow-arrow">
-                    <path d="M10 0 V26 M5 20 L10 26 L15 20" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                </div>
-
-                <!-- Node 3: Safety Shield -->
-                <div class="flow-node-card node-safety">
-                  <div class="node-port port-top"></div>
-                  <div class="node-port port-right"></div>
-                  <div class="node-header">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                    <h4>Safety Shield</h4>
-                  </div>
-                  <div class="node-body">
-                    <div class="gateways-grid-mini">
-                      <div class="gate-status pass" title="Skills Layer">
-                        <div class="gate-status-indicator"></div>
-                        <span class="gate-lbl">Skills</span>
-                      </div>
-                      <div class="gate-status {isRiskBlock ? 'blocked' : 'pass'}" title="Risk Guard">
-                        <div class="gate-status-indicator"></div>
-                        <span class="gate-lbl">Risk</span>
-                      </div>
-                      <div class="gate-status {isGateBlock ? 'blocked' : 'pass'}" title="Action Gate">
-                        <div class="gate-status-indicator"></div>
-                        <span class="gate-lbl">Action</span>
-                      </div>
-                      <div class="gate-status {isTrajStop ? 'blocked' : 'pass'}" title="Trajectory">
-                        <div class="gate-status-indicator"></div>
-                        <span class="gate-lbl">Traj</span>
-                      </div>
-                    </div>
-                    
-                    <div class="gate-verdict-mini {getDecisionColorClass(intervention.decision)}">
-                      <span class="label">Verdict:</span> <strong>{intervention.decision || 'ALLOW'}</strong>
-                      {#if intervention.reason}
-                        <div class="verdict-reason font-mono">{intervention.reason}</div>
-                      {/if}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Arrow 3-4 -->
-              <div class="arrow-container horizontal">
-                <svg width="40" height="20" viewBox="0 0 40 20" fill="none" class="flow-arrow">
-                  <path d="M0 10 H36 M30 5 L36 10 L30 15" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </div>
-
-              <!-- Column 3: Action & Result -->
-              <div class="flow-col">
-                <!-- Node 4: Proposed Action -->
+                <!-- Node 3.3: Proposed Action -->
                 <div class="flow-node-card node-action">
-                  <div class="node-port port-left"></div>
-                  <div class="node-port port-bottom"></div>
+                  <div class="node-port port-top" style="left: 50%;"></div>
+                  <div class="node-port port-bottom" style="left: 50%;"></div>
                   <div class="node-header">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                     </svg>
-                    <h4>Proposed Call</h4>
+                    <h4>Proposed Action</h4>
                   </div>
                   <div class="node-body">
                     <span class="action-tag">{action.tool || 'final_response'}</span>
@@ -275,15 +389,55 @@
                   </div>
                 </div>
 
-                <!-- Arrow 4-5 -->
-                <div class="arrow-container vertical">
-                  <svg width="20" height="30" viewBox="0 0 20 30" fill="none" class="flow-arrow">
-                    <path d="M10 0 V26 M5 20 L10 26 L15 20" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                <!-- Node 3.4: Action Realization (Safety Shield) -->
+                <div class="flow-node-card node-safety">
+                  <div class="node-port port-top" style="left: 50%;"></div>
+                  <div class="node-port port-left" style="top: 50%;"></div>
+                  <div class="node-port port-right" style="top: 50%;"></div>
+                  <div class="node-header">
+                    <span class="badge badge-warning font-mono mr-xs">3</span>
+                    <h4>Action Realization</h4>
+                  </div>
+                  <div class="node-body">
+                    <div class="layers-pipeline">
+                      <!-- Layer 2: Risk Guard -->
+                      <div class="layer-item {isRiskBlock ? 'blocked' : 'pass'}">
+                        <div class="layer-hdr">
+                          <span class="indicator"></span>
+                          <span class="layer-name">Risk Guard Check</span>
+                        </div>
+                        <div class="layer-data text-xxs">
+                          {#if riskState}
+                            Loss: ${riskState.daily_loss_usdt ? riskState.daily_loss_usdt.toFixed(1) : '0.0'}/${riskState.max_daily_loss_usdt || '50.0'}
+                          {:else}
+                            Daily limits OK
+                          {/if}
+                        </div>
+                      </div>
+
+                      <!-- Layer 3: Action Gate -->
+                      <div class="layer-item {isGateBlock ? 'blocked' : 'pass'}">
+                        <div class="layer-hdr">
+                          <span class="indicator"></span>
+                          <span class="layer-name">Action Gate check</span>
+                        </div>
+                        <div class="layer-data text-xxs">
+                          Tool: <span class="highlight-mini">{action.tool || 'final_response'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="gate-verdict-mini {getDecisionColorClass(intervention.decision)} mt-xs">
+                      <span class="label">Verdict:</span> <strong>{intervention.decision || 'ALLOW'}</strong>
+                      {#if intervention.reason}
+                        <div class="verdict-reason font-mono text-xxs">{intervention.reason}</div>
+                      {/if}
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Node 5: Result / Feedback -->
-                <div class="flow-node-card node-result">
+                <div class="flow-node-card node-result {isRiskBlock || isGateBlock || isTrajStop ? 'node-disabled' : ''}">
                   <div class="node-port port-top"></div>
                   <div class="node-header">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -309,10 +463,29 @@
                     {/if}
                   </div>
                 </div>
+
+                <!-- Node 3.6: Trajectory Regulation (bottom bar) -->
+                <div class="flow-node-card node-trajectory">
+                  <div class="trajectory-content">
+                    <div class="trajectory-left">
+                      <span class="badge badge-danger font-mono mr-xs">4</span>
+                      <h4 class="trajectory-title">Trajectory Regulation Layer</h4>
+                      <span class="trajectory-desc text-xxs">Monitor trajectories, detect loops & errors</span>
+                    </div>
+                    <div class="trajectory-right">
+                      {#if isTrajStop}
+                        <span class="badge badge-danger text-xxs font-mono">STATUS: STOPPED (BLOCKED)</span>
+                      {:else}
+                        <span class="badge badge-success text-xxs font-mono">STATUS: PASS (ACTIVE)</span>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+
               </div>
-              
             </div>
           </div>
+        </div>
         </div>
       {/if}
 
@@ -1056,33 +1229,130 @@
     border-color: var(--color-primary);
   }
 
-  .flow-canvas-wrapper {
+  .flow-container-rel {
+    position: relative;
     width: 100%;
-    overflow-x: auto;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  .flow-canvas-wrapper {
+    position: relative;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .zoom-controls {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.25rem;
+    box-shadow: var(--shadow-md);
+    z-index: 50;
+    user-select: none;
+  }
+
+  .zoom-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    background-color: transparent;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .zoom-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-panel-hover);
+    border-color: var(--border-color-hover);
+  }
+
+  .zoom-btn.reset {
+    border-left: 1px solid var(--border-color);
+    border-radius: 0 4px 4px 0;
+    margin-left: 0.25rem;
+    padding-left: 0.25rem;
+  }
+
+  .zoom-text {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 40px;
+    text-align: center;
   }
 
   .flow-canvas {
     background-color: var(--bg-main);
     background-size: 16px 16px;
     background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
-    padding: 2rem;
-    display: flex;
-    flex-direction: row;
-    gap: 0.5rem;
-    justify-content: space-between;
-    align-items: stretch;
-    min-width: 960px;
+    width: 100%;
+    height: calc(680px * var(--zoom));
+    min-width: calc(1240px * var(--zoom));
+    position: relative;
   }
 
-  .flow-col {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 0.5rem;
+  .flow-board {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1240px;
+    height: 680px;
+    flex-shrink: 0;
+    transform: scale(var(--zoom));
+    transform-origin: 0 0;
+  }
+
+  .flow-edges-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1240px;
+    height: 640px;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .path-flow-active {
+    stroke: var(--color-primary);
+    stroke-width: 3px;
+    fill: none;
+    stroke-dasharray: 6 4;
+    animation: flow-dash-anim 30s linear infinite;
+  }
+
+  .path-flow-blocked {
+    stroke: var(--color-danger);
+    stroke-width: 3px;
+    fill: none;
+    stroke-dasharray: 6 4;
+    animation: flow-dash-anim 30s linear infinite;
+  }
+
+  .path-flow-inactive {
+    stroke: var(--border-color);
+    stroke-width: 2px;
+    fill: none;
+    opacity: 0.5;
+  }
+
+  @keyframes flow-dash-anim {
+    to {
+      stroke-dashoffset: -1000;
+    }
   }
 
   .flow-node-card {
@@ -1091,12 +1361,172 @@
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
     padding: 1rem;
-    width: 270px;
-    position: relative;
+    position: absolute;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
     transition: all 0.2s;
+    z-index: 2;
+  }
+
+  .node-evo {
+    left: 20px;
+    top: 40px;
+    width: 250px;
+    height: 500px;
+  }
+
+  .node-contract {
+    left: 300px;
+    top: 40px;
+    width: 250px;
+    height: 230px;
+  }
+
+  .node-skills-layer {
+    left: 300px;
+    top: 310px;
+    width: 250px;
+    height: 230px;
+  }
+
+  .node-input {
+    left: 580px;
+    top: 40px;
+    width: 270px;
+    height: 230px;
+  }
+
+  .node-brain {
+    left: 910px;
+    top: 40px;
+    width: 270px;
+    height: 160px;
+  }
+
+  .node-action {
+    left: 910px;
+    top: 220px;
+    width: 270px;
+    height: 140px;
+  }
+
+  .node-safety {
+    left: 910px;
+    top: 380px;
+    width: 270px;
+    height: 190px;
+  }
+
+  .node-result {
+    left: 580px;
+    top: 300px;
+    width: 270px;
+    height: 240px;
+  }
+
+  .node-trajectory {
+    left: 580px;
+    top: 600px;
+    width: 600px;
+    height: 50px;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .trajectory-content {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .trajectory-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .trajectory-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .trajectory-desc {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .sub-panel {
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .skills-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .skills-list li {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .text-xxs {
+    font-size: 0.6875rem;
+  }
+
+  .text-xxs.text-muted {
+    color: var(--text-muted);
+  }
+
+  .mr-xs {
+    margin-right: 0.25rem;
+  }
+
+  .mt-xs {
+    margin-top: 0.25rem;
+  }
+
+  .w-full {
+    width: 100%;
+  }
+
+  .badge-primary {
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+  }
+
+  .badge-warning {
+    background-color: var(--color-warning-light);
+    color: var(--color-warning);
+  }
+
+  .badge-danger {
+    background-color: var(--color-danger-light);
+    color: var(--color-danger);
+  }
+
+  .badge-success {
+    background-color: var(--color-success-light);
+    color: var(--color-success);
+  }
+
+  .node-disabled {
+    opacity: 0.5;
+    border-color: var(--border-color);
   }
 
   .flow-node-card:hover {
@@ -1128,6 +1558,9 @@
     flex-direction: column;
     gap: 0.5rem;
     font-size: 0.8125rem;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
   }
 
   .node-port {
@@ -1164,26 +1597,6 @@
     transform: translateX(-50%);
   }
 
-  .arrow-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  .arrow-container.horizontal {
-    width: 40px;
-  }
-
-  .arrow-container.vertical {
-    height: 30px;
-    width: 100%;
-  }
-
-  .flow-arrow {
-    display: block;
-  }
-
   .mini-chart-container {
     display: flex;
     flex-direction: column;
@@ -1212,23 +1625,6 @@
     color: var(--text-secondary);
   }
 
-  .gateways-grid-mini {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.375rem;
-  }
-
-  .gateways-grid-mini .gate-status {
-    padding: 0.25rem 0.375rem;
-    gap: 0.375rem;
-    background-color: var(--bg-main);
-  }
-
-  .gate-lbl {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-  }
 
   .gate-verdict-mini {
     margin-top: 0.25rem;
@@ -1258,5 +1654,77 @@
   }
   .compact-table tbody tr.selected-row td {
     color: var(--color-primary) !important;
+  }
+
+  /* Layers pipeline styling */
+  .layers-pipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.375rem;
+  }
+
+  .layer-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.25rem 0.375rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+  }
+
+  .layer-item.pass {
+    background-color: rgba(16, 185, 129, 0.02);
+    border-color: rgba(16, 185, 129, 0.08);
+  }
+
+  .layer-item.blocked {
+    background-color: rgba(239, 68, 68, 0.02);
+    border-color: rgba(239, 68, 68, 0.08);
+  }
+
+  .layer-hdr {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .layer-hdr .indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .layer-item.pass .indicator {
+    background-color: var(--color-success);
+  }
+
+  .layer-item.blocked .indicator {
+    background-color: var(--color-danger);
+  }
+
+  .layer-name {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .layer-data {
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+    padding-left: 0.5rem;
+    font-family: var(--font-mono);
+  }
+
+  .highlight-mini {
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 0 0.1875rem;
+    color: var(--text-primary);
   }
 </style>

@@ -14,6 +14,8 @@
   let controlState = null;
   let evolutionStatus = null;
 
+  let trackLive = true;
+
   let activeTab = "visualizer"; // visualizer | settings
   
   let isLoadingList = false;
@@ -36,8 +38,12 @@
         const data = await res.json();
         episodes = data.episodes || [];
         
-        // Auto select first episode if none selected
-        if (autoSelect && episodes.length > 0 && !selectedEpisodeId) {
+        if (trackLive && episodes.length > 0) {
+          if (selectedEpisodeId !== episodes[0].episode_id) {
+            selectedEpisodeId = episodes[0].episode_id;
+            fetchEpisodeDetail(selectedEpisodeId, false);
+          }
+        } else if (autoSelect && episodes.length > 0 && !selectedEpisodeId) {
           selectEpisode(episodes[0].episode_id);
         }
       }
@@ -111,9 +117,18 @@
   }
 
   function selectEpisode(id) {
+    trackLive = false; // Turn off live tracking when manually selecting
     selectedEpisodeId = id;
     fetchEpisodeDetail(id);
     activeTab = "visualizer"; // Auto-switch to visualizer tab when selecting a run
+  }
+
+  function enableLiveTracking() {
+    trackLive = true;
+    if (episodes.length > 0) {
+      selectedEpisodeId = episodes[0].episode_id;
+      fetchEpisodeDetail(selectedEpisodeId, false);
+    }
   }
 
   async function handleRefreshAll() {
@@ -137,7 +152,7 @@
     pollInterval = setInterval(() => {
       fetchEpisodes(false);
       fetchEvolutionStatus();
-      if (selectedEpisodeId && activeTab === "visualizer") {
+      if (!trackLive && selectedEpisodeId && activeTab === "visualizer") {
         fetchEpisodeDetail(selectedEpisodeId, false);
       }
     }, 5000);
@@ -153,6 +168,8 @@
   <Sidebar 
     {episodes} 
     {selectedEpisodeId} 
+    {trackLive}
+    onEnableLiveTracking={enableLiveTracking}
     isLoading={isLoadingList} 
     onSelectEpisode={selectEpisode}
     isCollapsed={isSidebarCollapsed}
@@ -260,7 +277,12 @@
             <span>Loading episode details...</span>
           </div>
         {/if}
-        <FlowVisualizer episode={selectedEpisode} />
+        <FlowVisualizer 
+          episode={selectedEpisode} 
+          episodes={episodes} 
+          evolutionStatus={evolutionStatus} 
+          onTriggerEvolution={triggerOfflineEvolution} 
+        />
       {:else if activeTab === "settings"}
         {#if controlState}
           <SettingsPanel 

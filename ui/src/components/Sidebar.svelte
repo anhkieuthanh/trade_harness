@@ -4,6 +4,8 @@
   export let onSelectEpisode = () => {};
   export let isLoading = false;
   export let isCollapsed = false;
+  export let trackLive = true;
+  export let onEnableLiveTracking = () => {};
 
   let searchQuery = "";
   let statusFilter = "all";
@@ -43,8 +45,18 @@
   <div class="sidebar-content">
     <div class="sidebar-header">
       <div class="title-row">
-        <h2>Runs Log</h2>
-        <span class="count-badge">{filteredEpisodes.length}</span>
+        <div class="title-left">
+          <h2>Runs Log</h2>
+          <span class="count-badge">{filteredEpisodes.length}</span>
+        </div>
+        <button 
+          class="live-track-btn {trackLive ? 'active' : ''}" 
+          on:click={onEnableLiveTracking}
+          title={trackLive ? "Live tracking active: showing latest episode" : "Click to track live episodes"}
+        >
+          <span class="live-pulse-dot"></span>
+          {trackLive ? 'LIVE' : 'TRACK LIVE'}
+        </button>
       </div>
       
       <div class="search-box">
@@ -388,5 +400,63 @@
   .mode-tag.dry {
     background-color: var(--bg-main);
     color: var(--text-muted);
+  }
+
+  .title-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .live-track-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .live-track-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border-color-hover);
+    background-color: var(--bg-panel-hover);
+  }
+
+  .live-track-btn.active {
+    background-color: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.2);
+    color: var(--color-success);
+  }
+
+  .live-pulse-dot {
+    width: 6px;
+    height: 6px;
+    background-color: var(--text-muted);
+    border-radius: 50%;
+    transition: all 0.2s;
+  }
+
+  .live-track-btn.active .live-pulse-dot {
+    background-color: var(--color-success);
+    animation: live-pulse 1.5s infinite ease-in-out;
+  }
+
+  @keyframes live-pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
   }
 </style>

@@ -100,6 +100,7 @@ def run_offline_evolution(
     annotations = [
         annotate_episode_failure(episode=episode, evaluator=evaluator)
         for episode in episodes
+        if episode.get("final_status") == "FAILED"
     ]
     patterns = mine_failure_patterns(annotations)
     candidates = build_update_candidates(

@@ -55,17 +55,17 @@
     {#if price}
       <span class="price font-mono">${formatPrice(price)}</span>
     {/if}
-    
-    {#if hoveredCandle}
-      <div class="tooltip-data font-mono">
-        <span>O: <span class="val">${formatPrice(hoveredCandle.open)}</span></span>
-        <span>H: <span class="val">${formatPrice(hoveredCandle.high)}</span></span>
-        <span>L: <span class="val">${formatPrice(hoveredCandle.low)}</span></span>
-        <span>C: <span class="val">${formatPrice(hoveredCandle.close)}</span></span>
-        <span>V: <span class="val">{hoveredCandle.volume ? hoveredCandle.volume.toFixed(2) : "0.00"}</span></span>
-      </div>
-    {/if}
   </div>
+
+  {#if hoveredCandle}
+    <div class="tooltip-data font-mono">
+      <div>O: <span class="val">${formatPrice(hoveredCandle.open)}</span></div>
+      <div>H: <span class="val">${formatPrice(hoveredCandle.high)}</span></div>
+      <div>L: <span class="val">${formatPrice(hoveredCandle.low)}</span></div>
+      <div>C: <span class="val">${formatPrice(hoveredCandle.close)}</span></div>
+      <div>V: <span class="val">{hoveredCandle.volume ? hoveredCandle.volume.toFixed(2) : "0.00"}</span></div>
+    </div>
+  {/if}
 
   {#if ohlcCandles.length === 0}
     <div class="no-data">
@@ -174,16 +174,26 @@
   }
 
   .tooltip-data {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.375rem 0.5rem;
     display: flex;
-    gap: 0.75rem;
+    flex-direction: column;
+    gap: 0.125rem;
+    font-size: 0.6875rem;
     color: var(--text-muted);
-    font-size: 0.75rem;
-    margin-left: auto;
+    pointer-events: none;
+    z-index: 20;
+    box-shadow: var(--shadow-md);
   }
 
   .tooltip-data .val {
-    color: var(--text-secondary);
-    font-weight: 500;
+    color: var(--text-primary);
+    font-weight: 600;
   }
 
   .no-data {
