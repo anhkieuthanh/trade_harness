@@ -261,6 +261,7 @@
     align-items: center;
     padding: 0 1.5rem;
     flex-shrink: 0;
+    gap: 1.5rem;
   }
 
   .header-left, .header-right {
