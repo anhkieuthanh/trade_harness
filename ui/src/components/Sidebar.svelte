@@ -3,6 +3,7 @@
   export let selectedEpisodeId = null;
   export let onSelectEpisode = () => {};
   export let isLoading = false;
+  export let isCollapsed = false;
 
   let searchQuery = "";
   let statusFilter = "all";
@@ -38,106 +39,108 @@
   }
 </script>
 
-<div class="sidebar">
-  <div class="sidebar-header">
-    <div class="title-row">
-      <h2>Runs Log</h2>
-      <span class="count-badge">{filteredEpisodes.length}</span>
-    </div>
-    
-    <div class="search-box">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
-      <input 
-        type="text" 
-        placeholder="Search Episode ID..." 
-        bind:value={searchQuery}
-      />
-    </div>
-
-    <div class="filter-tabs">
-      <button 
-        class="tab-btn {statusFilter === 'all' ? 'active' : ''}" 
-        on:click={() => statusFilter = 'all'}
-      >
-        All
-      </button>
-      <button 
-        class="tab-btn {statusFilter === 'success' ? 'active' : ''}" 
-        on:click={() => statusFilter = 'success'}
-      >
-        Success
-      </button>
-      <button 
-        class="tab-btn {statusFilter === 'failed' ? 'active' : ''}" 
-        on:click={() => statusFilter = 'failed'}
-      >
-        Failed
-      </button>
-      <button 
-        class="tab-btn {statusFilter === 'blocked' ? 'active' : ''}" 
-        on:click={() => statusFilter = 'blocked'}
-      >
-        Blocked
-      </button>
-    </div>
-  </div>
-
-  <div class="episodes-list">
-    {#if isLoading}
-      <div class="status-msg">
-        <div class="spinner"></div>
-        <span>Loading episodes...</span>
+<div class="sidebar {isCollapsed ? 'collapsed' : ''}">
+  <div class="sidebar-content">
+    <div class="sidebar-header">
+      <div class="title-row">
+        <h2>Runs Log</h2>
+        <span class="count-badge">{filteredEpisodes.length}</span>
       </div>
-    {:else if filteredEpisodes.length === 0}
-      <div class="status-msg">
-        <span>No episodes match filter criteria</span>
+      
+      <div class="search-box">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input 
+          type="text" 
+          placeholder="Search Episode ID..." 
+          bind:value={searchQuery}
+        />
       </div>
-    {:else}
-      {#each filteredEpisodes as ep (ep.episode_id)}
+
+      <div class="filter-tabs">
         <button 
-          class="episode-card {selectedEpisodeId === ep.episode_id ? 'selected' : ''}"
-          on:click={() => onSelectEpisode(ep.episode_id)}
+          class="tab-btn {statusFilter === 'all' ? 'active' : ''}" 
+          on:click={() => statusFilter = 'all'}
         >
-          <div class="card-header">
-            <span class="episode-id code-font">
-              {ep.episode_id ? ep.episode_id.substring(0, 12) + '...' : 'Unknown ID'}
-            </span>
-            <span class="badge {getStatusBadgeClass(ep.final_status)}">
-              {ep.final_status || 'Unknown'}
-            </span>
-          </div>
-
-          <div class="card-meta">
-            <div class="meta-item">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>{formatTime(ep.started_at)}</span>
-            </div>
-            <div class="meta-item">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
-              </svg>
-              <span>{ep.step_count || 0} step{ep.step_count === 1 ? '' : 's'}</span>
-            </div>
-          </div>
-
-          {#if ep.termination_reason}
-            <div class="card-footer">
-              <span class="reason-label">Reason:</span>
-              <span class="reason-val">{ep.termination_reason.replace(/_/g, ' ')}</span>
-            </div>
-          {/if}
-
-          <div class="card-details">
-            <span class="symbol-tag">{ep.symbol || 'BTCUSDT'}</span>
-            <span class="mode-tag {ep.mode === 'live' ? 'live' : 'dry'}">{ep.mode || 'dry'}</span>
-          </div>
+          All
         </button>
-      {/each}
-    {/if}
+        <button 
+          class="tab-btn {statusFilter === 'success' ? 'active' : ''}" 
+          on:click={() => statusFilter = 'success'}
+        >
+          Success
+        </button>
+        <button 
+          class="tab-btn {statusFilter === 'failed' ? 'active' : ''}" 
+          on:click={() => statusFilter = 'failed'}
+        >
+          Failed
+        </button>
+        <button 
+          class="tab-btn {statusFilter === 'blocked' ? 'active' : ''}" 
+          on:click={() => statusFilter = 'blocked'}
+        >
+          Blocked
+        </button>
+      </div>
+    </div>
+
+    <div class="episodes-list">
+      {#if isLoading}
+        <div class="status-msg">
+          <div class="spinner"></div>
+          <span>Loading episodes...</span>
+        </div>
+      {:else if filteredEpisodes.length === 0}
+        <div class="status-msg">
+          <span>No episodes match filter criteria</span>
+        </div>
+      {:else}
+        {#each filteredEpisodes as ep (ep.episode_id)}
+          <button 
+            class="episode-card {selectedEpisodeId === ep.episode_id ? 'selected' : ''}"
+            on:click={() => onSelectEpisode(ep.episode_id)}
+          >
+            <div class="card-header">
+              <span class="episode-id code-font">
+                {ep.episode_id ? ep.episode_id.substring(0, 12) + '...' : 'Unknown ID'}
+              </span>
+              <span class="badge {getStatusBadgeClass(ep.final_status)}">
+                {ep.final_status || 'Unknown'}
+              </span>
+            </div>
+
+            <div class="card-meta">
+              <div class="meta-item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{formatTime(ep.started_at)}</span>
+              </div>
+              <div class="meta-item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
+                </svg>
+                <span>{ep.step_count || 0} step{ep.step_count === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+
+            {#if ep.termination_reason}
+              <div class="card-footer">
+                <span class="reason-label">Reason:</span>
+                <span class="reason-val">{ep.termination_reason.replace(/_/g, ' ')}</span>
+              </div>
+            {/if}
+
+            <div class="card-details">
+              <span class="symbol-tag">{ep.symbol || 'BTCUSDT'}</span>
+              <span class="mode-tag {ep.mode === 'live' ? 'live' : 'dry'}">{ep.mode || 'dry'}</span>
+            </div>
+          </button>
+        {/each}
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -147,6 +150,21 @@
     height: 100%;
     background-color: var(--bg-sidebar);
     border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s;
+    overflow: hidden;
+  }
+
+  .sidebar.collapsed {
+    width: 0 !important;
+    border-right-color: transparent !important;
+  }
+
+  .sidebar-content {
+    width: 340px;
+    height: 100%;
     display: flex;
     flex-direction: column;
     flex-shrink: 0;

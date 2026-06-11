@@ -21,6 +21,7 @@
   let isRefreshing = false;
 
   let pollInterval = null;
+  let isSidebarCollapsed = false;
 
   // Compute metrics from episodes
   $: successCount = episodes.filter(ep => ep.final_status === 'SUCCESS').length;
@@ -135,6 +136,7 @@
     // Setup periodic polling for live execution updates (every 5s)
     pollInterval = setInterval(() => {
       fetchEpisodes(false);
+      fetchEvolutionStatus();
       if (selectedEpisodeId && activeTab === "visualizer") {
         fetchEpisodeDetail(selectedEpisodeId, false);
       }
@@ -153,6 +155,7 @@
     {selectedEpisodeId} 
     isLoading={isLoadingList} 
     onSelectEpisode={selectEpisode}
+    isCollapsed={isSidebarCollapsed}
   />
 
   <!-- Main Panel -->
@@ -160,6 +163,24 @@
     <!-- Top Global Header -->
     <header class="app-header">
       <div class="header-left">
+        <button 
+          class="sidebar-toggle-btn {isSidebarCollapsed ? 'collapsed' : ''}" 
+          on:click={() => isSidebarCollapsed = !isSidebarCollapsed}
+          title={isSidebarCollapsed ? "Show Runs Log" : "Hide Runs Log"}
+        >
+          {#if isSidebarCollapsed}
+            <!-- Expand Icon (double chevron right) -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          {:else}
+            <!-- Collapse Icon (double chevron left) -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7M19 19l-7-7 7-7" />
+            </svg>
+          {/if}
+        </button>
+
         <div class="brand">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" class="brand-icon">
             <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -203,6 +224,15 @@
               <span class="label">Daemon:</span>
               <span class="val badge {controlState.live_enabled ? 'badge-success' : 'badge-danger'}">
                 {controlState.live_enabled ? 'ALIVE' : 'STOPPED'}
+              </span>
+            </div>
+          {/if}
+
+          {#if evolutionStatus}
+            <div class="stat-bubble font-mono">
+              <span class="label">Evo:</span>
+              <span class="val badge {evolutionStatus.run_status?.status === 'running' ? 'badge-warning' : 'badge-primary'}">
+                {evolutionStatus.run_status?.status ? evolutionStatus.run_status.status.toUpperCase() : 'UNKNOWN'}
               </span>
             </div>
           {/if}
@@ -268,6 +298,33 @@
     display: flex;
     align-items: center;
     gap: 1rem;
+  }
+
+  .sidebar-toggle-btn {
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .sidebar-toggle-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border-color-hover);
+    background-color: var(--bg-panel-hover);
+  }
+
+  .sidebar-toggle-btn.collapsed {
+    color: var(--color-primary);
+    background-color: var(--color-primary-light);
+    border-color: rgba(37, 99, 235, 0.2);
   }
 
   .brand {
