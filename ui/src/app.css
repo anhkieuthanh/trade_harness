@@ -1,41 +1,41 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --bg-main: #090d16;
-  --bg-sidebar: #0e1322;
-  --bg-panel: #131a30;
-  --bg-panel-hover: #1b2440;
-  --bg-card: rgba(26, 36, 62, 0.4);
-  --border-color: #212d4a;
-  --border-color-hover: #31436e;
+  --bg-main: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --bg-panel: #ffffff;
+  --bg-panel-hover: #f1f5f9;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --border-color: #e2e8f0;
+  --border-color-hover: #cbd5e1;
   
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
   
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-primary-light: rgba(59, 130, 246, 0.15);
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: rgba(37, 99, 235, 0.08);
   
   --color-success: #10b981;
-  --color-success-light: rgba(16, 185, 129, 0.1);
-  --color-success-border: rgba(16, 185, 129, 0.3);
+  --color-success-light: rgba(16, 185, 129, 0.06);
+  --color-success-border: rgba(16, 185, 129, 0.2);
   
   --color-danger: #ef4444;
-  --color-danger-light: rgba(239, 68, 68, 0.1);
-  --color-danger-border: rgba(239, 68, 68, 0.3);
+  --color-danger-light: rgba(239, 68, 68, 0.06);
+  --color-danger-border: rgba(239, 68, 68, 0.2);
   
-  --color-warning: #f59e0b;
-  --color-warning-light: rgba(245, 158, 11, 0.1);
-  --color-warning-border: rgba(245, 158, 11, 0.3);
+  --color-warning: #d97706; /* slightly darker for readability on light bg */
+  --color-warning-light: rgba(245, 158, 11, 0.06);
+  --color-warning-border: rgba(245, 158, 11, 0.2);
   
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
-  --shadow-glow: 0 0 15px rgba(59, 130, 246, 0.15);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -1px rgba(0, 0, 0, 0.01);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.03), 0 4px 6px -2px rgba(0, 0, 0, 0.01);
+  --shadow-glow: 0 0 10px rgba(37, 99, 235, 0.08);
   
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -82,11 +82,6 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
 .animate-fade {
   animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -97,7 +92,6 @@ body {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(12px);
 }
 
 .code-font {
@@ -138,7 +132,7 @@ body {
 .badge-primary {
   background-color: var(--color-primary-light);
   color: var(--color-primary);
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.2);
 }
 
 /* Layout Framework */
@@ -191,15 +185,15 @@ button {
 }
 .btn-primary:hover {
   background-color: var(--color-primary-hover);
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.2);
 }
 
 .btn-secondary {
-  background-color: var(--bg-panel-hover);
+  background-color: #ffffff;
   color: var(--text-primary);
   border: 1px solid var(--border-color);
 }
 .btn-secondary:hover {
   border-color: var(--border-color-hover);
-  background-color: rgba(27, 36, 64, 0.8);
+  background-color: var(--bg-panel-hover);
 }
