@@ -3,6 +3,7 @@
   import Sidebar from "./components/Sidebar.svelte";
   import FlowVisualizer from "./components/FlowVisualizer.svelte";
   import SettingsPanel from "./components/SettingsPanel.svelte";
+  import DocsPage from "./components/DocsPage.svelte";
 
   // Backend API URL configuration (empty string means relative paths, i.e., served from the same host/port)
   // We use relative paths for production builds, but during Vite development, we point to localhost:8080
@@ -17,6 +18,7 @@
   let trackLive = true;
 
   let activeTab = "visualizer"; // visualizer | settings
+  let showDocs = false;
   
   let isLoadingList = false;
   let isLoadingDetail = false;
@@ -219,6 +221,17 @@
           >
             Settings & Evolution
           </button>
+          <div class="nav-divider"></div>
+          <button
+            id="docs-nav-btn"
+            class="nav-tab docs-tab"
+            on:click={() => showDocs = true}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+            Docs
+          </button>
         </nav>
       </div>
 
@@ -302,6 +315,10 @@
     </main>
   </div>
 </div>
+
+{#if showDocs}
+  <DocsPage onClose={() => showDocs = false} />
+{/if}
 
 <style>
   .app-header {
@@ -402,12 +419,35 @@
     border: 1px solid rgba(59, 130, 246, 0.2);
   }
 
+  .nav-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--border-color);
+    margin: 0 0.125rem;
+  }
+
+  .docs-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+  }
+
+  .docs-tab:hover {
+    color: #7c3aed;
+    background-color: rgba(139, 92, 246, 0.08);
+    border-color: rgba(139, 92, 246, 0.2);
+  }
+
+
   .quick-stats {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-wrap: nowrap;
   }
+
 
   .stat-bubble {
     background-color: var(--bg-panel);
