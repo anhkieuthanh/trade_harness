@@ -156,6 +156,93 @@ def _format_strategy_summary(action: str, quantity: float, hold_seconds: int, st
     )
 
 
+_LLM_VETO_CONFIDENCE_THRESHOLD = 40  # Veto entry if LLM confidence < this value
+
+
+def _build_rsi_reasoning_prompt(
+    *,
+    symbol: str,
+    action: str,
+    rsi_value: float,
+    candles: list[dict[str, Any]],
+    balance_usdt: float,
+    position_state: dict[str, Any],
+) -> str:
+    side = "LONG" if action == "open_long" else "SHORT"
+    recent = candles[-5:] if len(candles) >= 5 else candles
+    candle_summary = "; ".join(
+        f"[O:{c.get('open','?')} H:{c.get('high','?')} L:{c.get('low','?')} C:{c.get('close','?')}]"
+        for c in recent
+    )
+    position_summary = (
+        f"OPEN {position_state.get('side')} qty={position_state.get('quantity')}"
+        if position_state.get("is_open")
+        else "NO POSITION"
+    )
+    return (
+        f"You are a crypto trading analyst reviewing a RSI-7 signal on {symbol} (5m candles).\n"
+        f"RSI value: {rsi_value:.2f}\n"
+        f"Signal: {side} ({action})\n"
+        f"Reason: {'RSI oversold (<= 30)' if action == 'open_long' else 'RSI overbought (>= 70)'}\n"
+        f"Last 5 candles (OHLC): {candle_summary}\n"
+        f"Available balance: {balance_usdt:.2f} USDT\n"
+        f"Current position: {position_summary}\n\n"
+        "Based on the above, evaluate whether this RSI signal is reliable right now.\n"
+        "Consider: candle patterns, balance sufficiency, overall momentum direction.\n"
+        "Return ONLY valid JSON, no markdown, no explanation outside JSON:\n"
+        '{"confidence": <0-100>, "reasoning": "<1-2 sentence explanation>", "market_context": "<brief market description>"}'
+    )
+
+
+def _get_llm_reasoning(
+    *,
+    llm: LMStudioClient,
+    action: str,
+    rsi_value: float,
+    candles: list[dict[str, Any]],
+    balance_usdt: float,
+    position_state: dict[str, Any],
+    symbol: str,
+) -> dict[str, Any]:
+    """Ask LLM for a confidence score on the RSI entry signal.
+
+    Returns a dict with keys: confidence, reasoning, market_context, veto, error.
+    Never raises — always returns a safe fallback on failure.
+    """
+    try:
+        prompt = _build_rsi_reasoning_prompt(
+            symbol=symbol,
+            action=action,
+            rsi_value=rsi_value,
+            candles=candles,
+            balance_usdt=balance_usdt,
+            position_state=position_state,
+        )
+        raw = llm.chat(prompt)
+        payload = json.loads(raw)
+        confidence = int(payload.get("confidence", 50))
+        veto = confidence < _LLM_VETO_CONFIDENCE_THRESHOLD
+        return {
+            "confidence": confidence,
+            "reasoning": str(payload.get("reasoning", "")),
+            "market_context": str(payload.get("market_context", "")),
+            "veto": veto,
+            "error": None,
+            "skipped": False,
+        }
+    except Exception as exc:
+        # Graceful fallback: LLM unavailable → do NOT veto (infra failure != bad signal)
+        print(f"llm_reasoning=ERROR fallback_allow reason={exc.__class__.__name__}: {exc}")
+        return {
+            "confidence": None,
+            "reasoning": None,
+            "market_context": None,
+            "veto": False,
+            "error": f"{exc.__class__.__name__}: {exc}",
+            "skipped": True,
+        }
+
+
 def _run_programmatic_strategy_cycle(
     *,
     settings: Settings,
@@ -173,6 +260,7 @@ def _run_programmatic_strategy_cycle(
     risk_state = load_live_risk_state(risk_state_path)
     current_position_state = dict(initial_position_state)
     now = datetime.now(timezone.utc)
+    llm = LMStudioClient(settings.lmstudio_base_url, settings.lmstudio_model)
 
     if current_position_state.get("is_open") and strategy_state.opened_at is None:
         strategy_state = RSIState(
@@ -347,6 +435,83 @@ def _run_programmatic_strategy_cycle(
         print(f"agent={summary}")
         return
 
+    # ── LLM Veto Check (Option B) ──────────────────────────────────────────
+    # Only run when RSI proposes opening a new position — not for HOLD/CLOSE.
+    llm_reasoning: dict[str, Any] = {"skipped": True}
+    if plan.action in {"open_long", "open_short"}:
+        rsi_value = trade_strategy.calculate_rsi(
+            initial_market_snapshot.get("candles", []), period=7
+        )
+        llm_reasoning = _get_llm_reasoning(
+            llm=llm,
+            action=plan.action,
+            rsi_value=rsi_value,
+            candles=initial_market_snapshot.get("candles", []),
+            balance_usdt=current_balance,
+            position_state=current_position_state,
+            symbol=settings.symbol,
+        )
+        print(
+            f"llm_reasoning=DONE confidence={llm_reasoning.get('confidence')} "
+            f"veto={llm_reasoning.get('veto')} "
+            f"reason={llm_reasoning.get('reasoning')!r}"
+        )
+        if llm_reasoning.get("veto"):
+            veto_reason = (
+                f"LLM veto: confidence {llm_reasoning['confidence']}% < "
+                f"{_LLM_VETO_CONFIDENCE_THRESHOLD}% threshold — "
+                f"{llm_reasoning.get('reasoning', '')}"
+            )
+            summary = json.dumps(
+                {
+                    "final": "llm_veto_hold",
+                    "reason": veto_reason,
+                    "llm_confidence": llm_reasoning["confidence"],
+                    "llm_reasoning": llm_reasoning.get("reasoning"),
+                    "market_context": llm_reasoning.get("market_context"),
+                }
+            )
+            episode_steps.append(
+                build_runtime_step_record(
+                    step_index=1,
+                    observation={
+                        "market_snapshot": initial_market_snapshot,
+                        "position_state": current_position_state,
+                        "balance_state": balance_state,
+                        "strategy_state": {
+                            "opened_at": strategy_state.opened_at,
+                            "side": strategy_state.side,
+                            "quantity": strategy_state.quantity,
+                        },
+                        "risk_state": {
+                            "session_day": risk_state.session_day,
+                            "day_start_balance_usdt": risk_state.day_start_balance_usdt,
+                            "last_loss_at": risk_state.last_loss_at,
+                            "hard_stop_reason": risk_state.hard_stop_reason,
+                        },
+                        "llm_reasoning": llm_reasoning,
+                    },
+                    decision_summary=veto_reason,
+                    action={"final_response": summary},
+                    harness_intervention={
+                        "decision": "BLOCK",
+                        "layer": "llm_reasoning",
+                        "confidence": llm_reasoning["confidence"],
+                        "threshold": _LLM_VETO_CONFIDENCE_THRESHOLD,
+                    },
+                    environment_feedback={"blocked": True, "feedback": veto_reason},
+                )
+            )
+            finalize_episode(
+                final_status="SUCCESS",
+                termination_reason="llm_veto_hold",
+                final_outcome={"final": summary},
+                steps=episode_steps,
+            )
+            print(f"agent={summary}")
+            return
+    # ── End LLM Veto ──────────────────────────────────────────────────────
+
     gate_result = realize_action(
         tool_name=plan.action,
         arguments={"symbol": settings.symbol},
@@ -500,6 +665,7 @@ def _run_programmatic_strategy_cycle(
                     "last_loss_at": risk_state.last_loss_at,
                     "hard_stop_reason": risk_state.hard_stop_reason,
                 },
+                "llm_reasoning": llm_reasoning,
             },
             decision_summary=plan.reason,
             action={
