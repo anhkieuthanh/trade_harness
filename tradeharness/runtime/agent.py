@@ -738,8 +738,144 @@ def run_agent_cycle(settings: Settings) -> None:
                             return
                         break
 
+                    if tool_request.name in EXECUTION_TOOL_NAMES:
+                        risk_state_path = Path(settings.trade_risk_state_path)
+                        risk_state = load_live_risk_state(risk_state_path)
+
+                        balance_state = toolset.run_tool("get_balance", {"asset": "USDT"})
+                        current_balance = float(balance_state["available_balance"])
+
+                        risk_decision, risk_state = evaluate_live_risk(
+                            control=LiveRiskControl(
+                                max_daily_loss_usdt=settings.trade_risk_max_daily_loss_usdt,
+                                max_open_positions=settings.trade_risk_max_open_positions,
+                                loss_cooldown_seconds=settings.trade_risk_loss_cooldown_seconds,
+                                hard_stop_candle_range_pct=settings.trade_risk_hard_stop_candle_range_pct,
+                            ),
+                            runtime_state=risk_state,
+                            market_snapshot=initial_market_snapshot,
+                            position_state=current_position_state,
+                            current_balance_usdt=current_balance,
+                            planned_action=tool_request.name,
+                            now=datetime.now(timezone.utc),
+                        )
+                        save_live_risk_state(risk_state_path, risk_state)
+
+                        if risk_decision.decision in {"BLOCK", "FORCE_CLOSE"}:
+                            if risk_decision.decision == "FORCE_CLOSE" and current_position_state.get("is_open"):
+                                print(f"risk_guard=FORCE_CLOSE reason={risk_decision.reason}")
+                                try:
+                                    close_res = toolset.run_tool("close_position", {"symbol": settings.symbol})
+                                    risk_state = record_trade_close(
+                                        risk_state,
+                                        position_state=current_position_state,
+                                        exit_price=float(initial_market_snapshot["price"]),
+                                        now=datetime.now(timezone.utc),
+                                    )
+                                    save_live_risk_state(risk_state_path, risk_state)
+                                except Exception as exc:
+                                    print(f"Failed to force close position: {exc}")
+
+                            blocked_attempts += 1
+                            blocked_in_this_turn = True
+                            trajectory_history.append(
+                                {
+                                    "event": "block",
+                                    "tool_name": tool_request.name,
+                                    "block_reason": risk_decision.reason,
+                                }
+                            )
+                            messages.append(
+                                {
+                                    "role": "user",
+                                    "content": build_risk_block_feedback(risk_decision.reason),
+                                }
+                            )
+                            episode_steps.append(
+                                build_runtime_step_record(
+                                    step_index=len(episode_steps) + 1,
+                                    observation={
+                                        "position_state": current_position_state,
+                                        "inspected_state": dict(inspected_state),
+                                        "balance_state": balance_state,
+                                        "risk_state": {
+                                            "session_day": risk_state.session_day,
+                                            "day_start_balance_usdt": risk_state.day_start_balance_usdt,
+                                            "last_loss_at": risk_state.last_loss_at,
+                                            "hard_stop_reason": risk_state.hard_stop_reason,
+                                        },
+                                    },
+                                    decision_summary=get_message_content(response).strip()
+                                    or f"Requested tool {tool_request.name}.",
+                                    action={
+                                        "tool": tool_request.name,
+                                        "arguments": tool_request.arguments,
+                                    },
+                                    harness_intervention={
+                                        "decision": "BLOCK",
+                                        "layer": "risk",
+                                        "risk": {
+                                            "daily_loss_usdt": risk_decision.daily_loss_usdt,
+                                            "current_position_count": risk_decision.current_position_count,
+                                            "candle_range_pct": risk_decision.candle_range_pct,
+                                        },
+                                    },
+                                    environment_feedback={
+                                        "blocked": True,
+                                        "feedback": build_risk_block_feedback(risk_decision.reason),
+                                    },
+                                )
+                            )
+                            print(f"risk_guard=BLOCK reason={risk_decision.reason}")
+
+                            if blocked_attempts > MAX_ACTION_REALIZATION_RETRIES:
+                                finalize_episode(
+                                    final_status="FAILED",
+                                    termination_reason="blocked_by_live_risk_limit",
+                                    final_outcome={"final": "blocked_by_live_risk_limit"},
+                                )
+                                print('agent={"final":"blocked_by_live_risk_limit"}')
+                                return
+
+                            regulation_result = regulate_trajectory(
+                                history=trajectory_history,
+                                steps_remaining=6 - _ - 1,
+                                final_answer_present=False,
+                            )
+                            if regulation_result["decision"] == "WARN":
+                                trajectory_warning_in_this_turn = True
+                                messages.append(
+                                    {
+                                        "role": "user",
+                                        "content": build_trajectory_warning_feedback(regulation_result),
+                                    }
+                                )
+                            elif regulation_result["decision"] == "STOP":
+                                finalize_episode(
+                                    final_status="FAILED",
+                                    termination_reason="trajectory_regulation_stop",
+                                    final_outcome={
+                                        "final": "trajectory_regulation_stop",
+                                        "reason": regulation_result["reason"],
+                                    },
+                                )
+                                return
+                            break
+
                     tool_result = toolset.run_tool(tool_request.name, tool_request.arguments)
                     print(f"tool={tool_request.name} result={json.dumps(tool_result)}")
+
+                    if tool_request.name == "close_position":
+                        risk_state_path = Path(settings.trade_risk_state_path)
+                        risk_state = load_live_risk_state(risk_state_path)
+                        risk_state = record_trade_close(
+                            risk_state,
+                            position_state=current_position_state,
+                            exit_price=float(initial_market_snapshot["price"]),
+                            now=datetime.now(timezone.utc),
+                        )
+                        save_live_risk_state(risk_state_path, risk_state)
+
                     trajectory_history.append(
                         {
                             "event": "tool",

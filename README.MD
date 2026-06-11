@@ -138,7 +138,7 @@ python3 -m tradeharness.supervisor
 
 This starts:
 
-- the Streamlit operator UI on `http://localhost:8501`
+- the Svelte operator UI on `http://localhost:8080`
 - a background supervisor loop
 - the live agent loop when it is enabled from the UI
 - the offline evolution schedule configured from the UI
@@ -211,7 +211,7 @@ Layer 3 and Layer 4 can also rehydrate active deterministic artifacts when prese
 - `tradeharness/evolution/artifacts/current/action_rules.json`
 - `tradeharness/evolution/artifacts/current/trajectory_rules.json`
 
-## Streamlit Monitor
+## Svelte Operator Console
 
 The preferred way to run the local operator console is through the supervisor:
 
@@ -220,6 +220,7 @@ cd /Users/atif/Public/TradeHarness
 python3 -m tradeharness.supervisor
 ```
 
+This launches the UI server on `http://localhost:8080`.
 The page shows runtime health, recent episodes, evolution artifacts, and safe operator controls.
 Each data section refreshes independently, so changing one source does not force a full-page refresh.
 
@@ -233,13 +234,6 @@ The UI can:
 The control state is stored at `CONTROL_STATE_PATH`, defaulting to:
 
 - `var/control/state.json`
-
-For UI-only debugging, you can still run:
-
-```bash
-cd /Users/atif/Public/TradeHarness
-streamlit run streamlit_app.py
-```
 
 ## Pass Metrics
 

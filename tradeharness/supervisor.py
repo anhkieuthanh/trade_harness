@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import time
 from dataclasses import is_dataclass, replace
@@ -47,20 +46,6 @@ def resolve_control_state_path() -> Path:
     if candidate.is_absolute():
         return candidate
     return REPO_ROOT / candidate
-
-
-def build_streamlit_command(*, port: int = 8501) -> list[str]:
-    return [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        "streamlit_app.py",
-        "--server.headless",
-        "true",
-        "--server.port",
-        str(port),
-    ]
 
 
 def maybe_run_live_cycle(
@@ -181,15 +166,22 @@ def main() -> None:
     if not control_state_path.exists():
         save_control_state(control_state_path, ControlState())
 
-    streamlit_port = int(os.getenv("STREAMLIT_PORT", "8501"))
-    streamlit_process = subprocess.Popen(  # noqa: S603
-        build_streamlit_command(port=streamlit_port),
-        cwd=REPO_ROOT,
-    )
+    # Start Svelte UI server in background thread
+    try:
+        import threading
+        from tradeharness.ui_server import run_server as run_ui_server
+        ui_port = int(os.getenv("UI_PORT", "8080"))
+        ui_thread = threading.Thread(target=run_ui_server, args=(ui_port,), daemon=True)
+        ui_thread.start()
+        print(f"[supervisor] Svelte UI server started on port {ui_port}")
+    except Exception as e:
+        import sys
+        print(f"[supervisor] failed to start Svelte UI server: {e}", file=sys.stderr)
+
     try:
         run_worker(control_state_path)
-    finally:
-        streamlit_process.terminate()
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
