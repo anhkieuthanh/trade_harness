@@ -61,6 +61,28 @@ def _normalize_evaluator_result(result: Any) -> dict[str, Any]:
     }
 
 
+def _fallback_annotate(episode: dict[str, Any], error: Exception) -> dict[str, Any]:
+    reason = str(episode.get("termination_reason") or "")
+    if "action_realization" in reason:
+        primary = "action_realization"
+    elif "environment_contract" in reason:
+        primary = "environment_contract"
+    elif "trajectory_degeneration" in reason or "trajectory_regulation" in reason:
+        primary = "trajectory_degeneration"
+    else:
+        primary = "residual_reasoning"
+
+    priority_checks = [{"type": gate, "matched": (gate == primary)} for gate in FAP_GATES]
+    return build_annotation_record(
+        episode_id=episode["episode_id"],
+        primary_failure_type=primary,
+        failed_step_index=0,
+        priority_checks=priority_checks,
+        evidence=[],
+        rationale=f"Evaluator failed ({error.__class__.__name__}: {error}). Fallback rule selected: {primary}.",
+    )
+
+
 def annotate_episode_failure(
     *,
     episode: dict[str, Any],
@@ -69,11 +91,16 @@ def annotate_episode_failure(
     priority_checks: list[dict[str, Any]] = []
 
     for gate_name in FAP_GATES:
-        raw_result = evaluator.complete(
-            system_prompt="You are a strict failure annotation evaluator.",
-            user_prompt=build_fap_gate_prompt(gate_name=gate_name, episode=episode),
-        )
-        result = _normalize_evaluator_result(raw_result)
+        try:
+            raw_result = evaluator.complete(
+                system_prompt="You are a strict failure annotation evaluator.",
+                user_prompt=build_fap_gate_prompt(gate_name=gate_name, episode=episode),
+            )
+            result = _normalize_evaluator_result(raw_result)
+        except Exception as exc:
+            print(f"Evaluator error on gate {gate_name}: {exc}. Triggering fallback annotator.")
+            return _fallback_annotate(episode, exc)
+
         matched = bool(result.get("matched"))
         priority_checks.append({"type": gate_name, "matched": matched})
         if matched:
@@ -94,3 +121,4 @@ def annotate_episode_failure(
         evidence=[],
         rationale="Reached residual reasoning after all higher-priority gates failed.",
     )
+

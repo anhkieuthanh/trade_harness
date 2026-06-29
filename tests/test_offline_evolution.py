@@ -9,7 +9,7 @@ from tradeharness.config.settings import load_settings
 from tradeharness.evolution.classification.mapper import map_failure_to_layer
 from tradeharness.evolution.fap.annotator import annotate_episode_failure
 from tradeharness.evolution.fap.prompts import build_fap_gate_prompt
-from tradeharness.evolution.main import run_offline_evolution
+from tradeharness.evolution.main import run_offline_evolution, optimize_rsi_params
 from tradeharness.evolution.metrics import (
     summarize_pass_metrics,
     summarize_pass_metrics_by_harness_version,
@@ -21,6 +21,7 @@ from tradeharness.evolution.schemas import (
     build_episode_record,
     build_step_record,
     build_update_candidate,
+    determine_outcome_label,
 )
 from tradeharness.evolution.storage.trajectories import append_episode_record
 from tradeharness.evolution.storage.trajectories import load_trajectory_episodes
@@ -376,6 +377,87 @@ class FAPAnnotatorTests(unittest.TestCase):
         self.assertEqual(annotation["failed_step_index"], 3)
         self.assertIn("missing tool call", annotation["evidence"])
 
+    def test_annotate_episode_failure_fallback_on_crash(self) -> None:
+        class CrashingEvaluator:
+            def complete(self, *, system_prompt: str, user_prompt: str):
+                raise RuntimeError("Evaluator service unavailable.")
+
+        episode_ar = {
+            "episode_id": "episode-ar",
+            "termination_reason": "blocked_by_action_realization_limit"
+        }
+        annotation_ar = annotate_episode_failure(
+            episode=episode_ar,
+            evaluator=CrashingEvaluator(),
+        )
+        self.assertEqual(annotation_ar["primary_failure_type"], "action_realization")
+        self.assertIn("Evaluator failed", annotation_ar["rationale"])
+
+        episode_ec = {
+            "episode_id": "episode-ec",
+            "termination_reason": "blocked_by_environment_contract"
+        }
+        annotation_ec = annotate_episode_failure(
+            episode=episode_ec,
+            evaluator=CrashingEvaluator(),
+        )
+        self.assertEqual(annotation_ec["primary_failure_type"], "environment_contract")
+
+    def test_determine_outcome_label(self) -> None:
+        self.assertEqual(
+            determine_outcome_label({"final_status": "FAILED"}),
+            "failed"
+        )
+        self.assertEqual(
+            determine_outcome_label({"final_status": "SUCCESS", "termination_reason": "llm_veto_hold"}),
+            "llm_veto_hold"
+        )
+        self.assertEqual(
+            determine_outcome_label({"final_status": "SUCCESS", "termination_reason": "risk_guard_hold"}),
+            "risk_guard_hold"
+        )
+
+        losing_episode = {
+            "final_status": "SUCCESS",
+            "termination_reason": "rsi_strategy_cycle_completed",
+            "steps": [
+                {
+                    "action": {"tool": "close_position"},
+                    "observation": {
+                        "position_state": {
+                            "quantity": "0.01",
+                            "entry_price": "60000.0"
+                        },
+                        "market_snapshot": {
+                            "price": "59000.0"
+                        }
+                    }
+                }
+            ]
+        }
+        self.assertEqual(determine_outcome_label(losing_episode), "losing_trade")
+
+        winning_episode = {
+            "final_status": "SUCCESS",
+            "termination_reason": "rsi_strategy_cycle_completed",
+            "steps": [
+                {
+                    "action": {"tool": "close_position"},
+                    "observation": {
+                        "position_state": {
+                            "quantity": "0.01",
+                            "entry_price": "60000.0"
+                        },
+                        "market_snapshot": {
+                            "price": "61000.0"
+                        }
+                    }
+                }
+            ]
+        }
+        self.assertEqual(determine_outcome_label(winning_episode), "success")
+
+
 
 class EvolutionUpdaterTests(unittest.TestCase):
     def test_map_failure_to_layer_uses_expected_life_harness_target(self) -> None:
@@ -568,6 +650,11 @@ class OfflineEvolutionMainTests(unittest.TestCase):
                     "current",
                     "harness_meta.json",
                 ),
+                active_rsi_params_artifact_path=os.path.join(
+                    temp_dir,
+                    "current",
+                    "rsi_params.json",
+                ),
             )
 
             self.assertIn("daily_report_path", result)
@@ -585,12 +672,14 @@ class OfflineEvolutionMainTests(unittest.TestCase):
             self.assertIn("active_action_rules_artifact_path", result)
             self.assertIn("active_trajectory_rules_artifact_path", result)
             self.assertIn("active_harness_meta_artifact_path", result)
+            self.assertIn("active_rsi_params_artifact_path", result)
             self.assertTrue(os.path.exists(result["annotations_path"]))
             self.assertTrue(os.path.exists(result["active_contract_artifact_path"]))
             self.assertTrue(os.path.exists(result["active_action_rules_artifact_path"]))
             self.assertTrue(os.path.exists(result["active_trajectory_rules_artifact_path"]))
             self.assertTrue(os.path.exists(result["pass_metrics_path"]))
             self.assertTrue(os.path.exists(result["active_harness_meta_artifact_path"]))
+            self.assertTrue(os.path.exists(result["active_rsi_params_artifact_path"]))
 
             with open(result["daily_report_path"], "r", encoding="utf-8") as handle:
                 report = handle.read()
@@ -606,6 +695,144 @@ class OfflineEvolutionMainTests(unittest.TestCase):
                 harness_meta = json.load(handle)
 
             self.assertEqual(harness_meta["harness_version"], "v1")
+
+    def test_run_offline_evolution_reuses_cached_annotations(self) -> None:
+        class FakeEvaluator:
+            def __init__(self):
+                self.calls = 0
+            def complete(self, *, system_prompt: str, user_prompt: str):
+                self.calls += 1
+                return {"matched": False, "evidence": []}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trajectory_log_path = os.path.join(temp_dir, "episodes.jsonl")
+            output_dir = os.path.join(temp_dir, "evolution")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            annotations_path = os.path.join(output_dir, "annotations.json")
+            with open(annotations_path, "w", encoding="utf-8") as f:
+                json.dump([
+                    {
+                        "episode_id": "episode-1",
+                        "primary_failure_type": "residual_reasoning",
+                        "failed_step_index": 0,
+                        "priority_checks": [],
+                        "evidence": [],
+                        "rationale": "Cached rationale"
+                    }
+                ], f)
+
+            append_episode_record(
+                trajectory_log_path,
+                {
+                    "episode_id": "episode-1",
+                    "final_status": "FAILED",
+                    "termination_reason": "blocked",
+                    "steps": [],
+                },
+            )
+            append_episode_record(
+                trajectory_log_path,
+                {
+                    "episode_id": "episode-2",
+                    "final_status": "FAILED",
+                    "termination_reason": "blocked",
+                    "steps": [],
+                },
+            )
+
+            evaluator = FakeEvaluator()
+            result = run_offline_evolution(
+                trajectory_log_path=trajectory_log_path,
+                output_dir=output_dir,
+                evaluator=evaluator,
+                active_action_rules_artifact_path=os.path.join(temp_dir, "action_rules.json"),
+                active_trajectory_rules_artifact_path=os.path.join(temp_dir, "trajectory_rules.json"),
+                active_harness_meta_artifact_path=os.path.join(temp_dir, "harness_meta.json"),
+                active_rsi_params_artifact_path=os.path.join(temp_dir, "rsi_params.json"),
+            )
+
+            self.assertEqual(evaluator.calls, 4)
+
+            with open(result["annotations_path"], "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            
+            saved_ids = [ann["episode_id"] for ann in saved]
+            self.assertIn("episode-1", saved_ids)
+            self.assertIn("episode-2", saved_ids)
+            
+            ep1_ann = [ann for ann in saved if ann["episode_id"] == "episode-1"][0]
+            self.assertEqual(ep1_ann["rationale"], "Cached rationale")
+
+
+    def test_optimize_rsi_params_adjusts_thresholds_based_on_losing_trades(self) -> None:
+        # 1. Test LONG losses decrease oversold_threshold
+        long_loss_episode = {
+            "final_status": "SUCCESS",
+            "termination_reason": "rsi_strategy_cycle_completed",
+            "steps": [
+                {
+                    "action": {"tool": "close_position"},
+                    "observation": {
+                        "position_state": {
+                            "quantity": "0.01",
+                            "entry_price": "60000.0",
+                            "side": "LONG"
+                        },
+                        "market_snapshot": {
+                            "price": "59000.0"
+                        }
+                    }
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            params_file = os.path.join(temp_dir, "rsi_params.json")
+            # Create default parameters file
+            with open(params_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "rsi_period": 7,
+                    "oversold_threshold": 30.0,
+                    "overbought_threshold": 70.0
+                }, f)
+            
+            optimized = optimize_rsi_params([long_loss_episode], params_file)
+            self.assertEqual(optimized["oversold_threshold"], 29.0)
+            self.assertEqual(optimized["overbought_threshold"], 70.0)
+
+        # 2. Test SHORT losses increase overbought_threshold
+        short_loss_episode = {
+            "final_status": "SUCCESS",
+            "termination_reason": "rsi_strategy_cycle_completed",
+            "steps": [
+                {
+                    "action": {"tool": "close_position"},
+                    "observation": {
+                        "position_state": {
+                            "quantity": "0.01",
+                            "entry_price": "60000.0",
+                            "side": "SHORT"
+                        },
+                        "market_snapshot": {
+                            "price": "61000.0"
+                        }
+                    }
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            params_file = os.path.join(temp_dir, "rsi_params.json")
+            with open(params_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "rsi_period": 7,
+                    "oversold_threshold": 30.0,
+                    "overbought_threshold": 70.0
+                }, f)
+            
+            optimized = optimize_rsi_params([short_loss_episode], params_file)
+            self.assertEqual(optimized["oversold_threshold"], 30.0)
+            self.assertEqual(optimized["overbought_threshold"], 71.0)
+
 
 
 if __name__ == "__main__":

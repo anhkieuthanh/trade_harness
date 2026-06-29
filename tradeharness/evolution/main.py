@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any
 
 from tradeharness.config.settings import load_settings
 from tradeharness.evolution.fap.annotator import annotate_episode_failure
+from tradeharness.evolution.schemas import determine_outcome_label
 from tradeharness.evolution.metrics import (
     summarize_pass_metrics,
     summarize_pass_metrics_by_harness_version,
@@ -81,6 +83,52 @@ def build_daily_report_lines(
     return lines
 
 
+def optimize_rsi_params(
+    episodes: list[dict[str, Any]],
+    current_params_path: str,
+) -> dict[str, Any]:
+    from pathlib import Path
+    
+    rsi_period = 7
+    oversold_threshold = 30.0
+    overbought_threshold = 70.0
+
+    path = Path(current_params_path)
+    if path.exists():
+        try:
+            params = json.loads(path.read_text(encoding="utf-8"))
+            rsi_period = int(params.get("rsi_period", rsi_period))
+            oversold_threshold = float(params.get("oversold_threshold", oversold_threshold))
+            overbought_threshold = float(params.get("overbought_threshold", overbought_threshold))
+        except Exception:
+            pass
+
+    long_losses = 0
+    short_losses = 0
+
+    for ep in episodes:
+        if determine_outcome_label(ep) == "losing_trade":
+            steps = ep.get("steps", [])
+            if steps:
+                pos = steps[0].get("observation", {}).get("position_state", {})
+                side = pos.get("side")
+                if side == "LONG":
+                    long_losses += 1
+                elif side == "SHORT":
+                    short_losses += 1
+
+    if long_losses > 0 and long_losses >= short_losses:
+        oversold_threshold = max(15.0, oversold_threshold - 1.0)
+    elif short_losses > 0 and short_losses >= long_losses:
+        overbought_threshold = min(85.0, overbought_threshold + 1.0)
+
+    return {
+        "rsi_period": rsi_period,
+        "oversold_threshold": oversold_threshold,
+        "overbought_threshold": overbought_threshold,
+    }
+
+
 def run_offline_evolution(
     *,
     trajectory_log_path: str,
@@ -92,16 +140,32 @@ def run_offline_evolution(
     active_action_rules_artifact_path: str = "tradeharness/evolution/artifacts/current/action_rules.json",
     active_trajectory_rules_artifact_path: str = "tradeharness/evolution/artifacts/current/trajectory_rules.json",
     active_harness_meta_artifact_path: str = "tradeharness/evolution/artifacts/current/harness_meta.json",
+    active_rsi_params_artifact_path: str = "tradeharness/evolution/artifacts/current/rsi_params.json",
 ) -> dict[str, str]:
     run_id = datetime.now(timezone.utc).isoformat()
     episodes = load_trajectory_episodes(trajectory_log_path)
     pass_metrics = summarize_pass_metrics(episodes)
     version_summaries = summarize_pass_metrics_by_harness_version(episodes)
-    annotations = [
-        annotate_episode_failure(episode=episode, evaluator=evaluator)
-        for episode in episodes
-        if episode.get("final_status") == "FAILED"
-    ]
+    # Load existing annotations to reuse previous results
+    existing_annotations = []
+    annotations_file = os.path.join(output_dir, "annotations.json")
+    if os.path.exists(annotations_file):
+        try:
+            with open(annotations_file, "r", encoding="utf-8") as f:
+                existing_annotations = json.load(f)
+        except Exception:
+            pass
+    existing_map = {ann["episode_id"]: ann for ann in existing_annotations if isinstance(ann, dict) and "episode_id" in ann}
+
+    annotations = []
+    for episode in episodes:
+        if determine_outcome_label(episode) in {"failed", "losing_trade", "llm_veto_hold", "risk_guard_hold"}:
+            ep_id = episode.get("episode_id")
+            if ep_id and ep_id in existing_map:
+                annotations.append(existing_map[ep_id])
+            else:
+                ann = annotate_episode_failure(episode=episode, evaluator=evaluator)
+                annotations.append(ann)
     patterns = mine_failure_patterns(annotations)
     candidates = build_update_candidates(
         annotations=patterns,
@@ -163,6 +227,10 @@ def run_offline_evolution(
         )
         write_json_artifact(active_harness_meta_artifact_path, next_meta)
 
+    # Optimize and save RSI parameters
+    optimized_rsi = optimize_rsi_params(episodes, active_rsi_params_artifact_path)
+    write_json_artifact(active_rsi_params_artifact_path, optimized_rsi)
+
     return {
         "daily_report_path": write_markdown_report(
             os.path.join(output_dir, "daily-report.md"),
@@ -216,6 +284,7 @@ def run_offline_evolution(
         "active_action_rules_artifact_path": active_action_rules_artifact_path,
         "active_trajectory_rules_artifact_path": active_trajectory_rules_artifact_path,
         "active_harness_meta_artifact_path": active_harness_meta_artifact_path,
+        "active_rsi_params_artifact_path": active_rsi_params_artifact_path,
     }
 
 
@@ -236,6 +305,10 @@ def main() -> None:
         active_action_rules_artifact_path=settings.active_action_rules_artifact_path,
         active_trajectory_rules_artifact_path=settings.active_trajectory_rules_artifact_path,
         active_harness_meta_artifact_path=settings.active_harness_meta_artifact_path,
+        active_rsi_params_artifact_path=os.getenv(
+            "ACTIVE_RSI_PARAMS_ARTIFACT_PATH",
+            "tradeharness/evolution/artifacts/current/rsi_params.json",
+        ),
     )
     print(result)
 

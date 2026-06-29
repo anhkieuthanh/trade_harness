@@ -57,3 +57,44 @@ def build_annotation_record(**payload: Any) -> dict[str, Any]:
 
 def build_update_candidate(**payload: Any) -> dict[str, Any]:
     return dict(payload)
+
+
+def determine_outcome_label(episode: dict[str, Any]) -> str:
+    if episode.get("final_status") == "FAILED":
+        return "failed"
+
+    reason = episode.get("termination_reason", "")
+    if reason == "llm_veto_hold":
+        return "llm_veto_hold"
+    if reason == "risk_guard_hold":
+        return "risk_guard_hold"
+
+    # Check for losing trade:
+    # A trade is recorded in the steps.
+    # If the first step action is "close_position", we look at the position state and the current market price.
+    steps = episode.get("steps", [])
+    if steps:
+        first_step = steps[0]
+        action = first_step.get("action", {})
+        if action and action.get("tool") == "close_position":
+            obs = first_step.get("observation", {})
+            pos = obs.get("position_state", {})
+            mkt = obs.get("market_snapshot", {})
+            price = mkt.get("price")
+            if pos and price:
+                try:
+                    qty = float(pos.get("quantity", 0.0))
+                    entry = float(pos.get("entry_price", 0.0))
+                    exit_p = float(price)
+                    side = str(pos.get("side", "")).upper()
+                    if side == "SHORT":
+                        pnl = (entry - exit_p) * abs(qty)
+                    else:
+                        pnl = (exit_p - entry) * abs(qty)
+                    if pnl < 0:
+                        return "losing_trade"
+                except (ValueError, TypeError):
+                    pass
+
+    return "success"
+

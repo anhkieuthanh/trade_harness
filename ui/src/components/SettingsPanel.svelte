@@ -85,13 +85,13 @@
     <div class="form-container">
       <div class="toggle-row">
         <label class="toggle-container">
-          <input type="checkbox" bind:checked={controlState.live_enabled} />
+          <input type="checkbox" bind:checked={controlState.live_enabled} on:change={handleSave} />
           <span class="toggle-slider"></span>
           <span class="toggle-label">Enable Live Agent Loop</span>
         </label>
         
         <label class="toggle-container">
-          <input type="checkbox" bind:checked={controlState.offline_evolution_enabled} />
+          <input type="checkbox" bind:checked={controlState.offline_evolution_enabled} on:change={handleSave} />
           <span class="toggle-slider"></span>
           <span class="toggle-label">Scheduled Evolution</span>
         </label>
@@ -272,12 +272,21 @@
 
 <style>
   .settings-panel {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
     gap: 1.5rem;
     height: 100%;
     overflow-y: auto;
     padding: 1.5rem;
+    flex: 1;
+    width: 100%;
+  }
+
+  @media (max-width: 1024px) {
+    .settings-panel {
+      grid-template-columns: 1fr;
+    }
   }
 
   .panel-section {

@@ -201,6 +201,27 @@ class TestRSIStrategyBuildPlan(unittest.TestCase):
         )
         self.assertEqual(plan.action, "open_long")
 
+    def test_build_plan_loads_rsi_params_json(self):
+        """Should load strategy thresholds from rsi_params.json if present."""
+        import os
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            params_file = Path(tmp_dir) / "rsi_params.json"
+            params_file.write_text(json.dumps({
+                "rsi_period": 5,
+                "oversold_threshold": 40.0,
+                "overbought_threshold": 60.0
+            }))
+            os.environ["ACTIVE_RSI_PARAMS_ARTIFACT_PATH"] = str(params_file)
+            try:
+                closes = [50.0] * 5 + [55.0, 62.0, 70.0]
+                plan = self._build_plan(closes=closes)
+                self.assertEqual(plan.action, "open_short")
+                self.assertIn("60.0", plan.reason)
+            finally:
+                if "ACTIVE_RSI_PARAMS_ARTIFACT_PATH" in os.environ:
+                    del os.environ["ACTIVE_RSI_PARAMS_ARTIFACT_PATH"]
+
+
 
 class TestRSIStateSerialization(unittest.TestCase):
     def setUp(self):

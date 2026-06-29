@@ -92,6 +92,20 @@ class RSIStrategy:
         oversold_threshold: float = 30.0,
         overbought_threshold: float = 70.0,
     ) -> RSIPlan:
+        import os
+        params_path = Path(os.environ.get(
+            "ACTIVE_RSI_PARAMS_ARTIFACT_PATH",
+            "tradeharness/evolution/artifacts/current/rsi_params.json"
+        ))
+        if params_path.exists():
+            try:
+                params = json.loads(params_path.read_text(encoding="utf-8"))
+                rsi_period = int(params.get("rsi_period", rsi_period))
+                oversold_threshold = float(params.get("oversold_threshold", oversold_threshold))
+                overbought_threshold = float(params.get("overbought_threshold", overbought_threshold))
+            except Exception as exc:
+                print(f"Error loading rsi_params.json: {exc}. Using default/passed values.")
+
         current_time = now or datetime.now(timezone.utc)
         is_open = bool(position_state.get("is_open", False))
         
